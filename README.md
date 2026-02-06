@@ -1,71 +1,64 @@
-# al-db-schema README
+// ...existing code...
+# al-db-schema
 
-This is the README for your extension "al-db-schema". After writing up a brief description, we recommend including the following sections.
+Extension VS Code pour générer un schéma de base de données (Mermaid ERD) à partir d'un projet Business Central AL ouvert dans VS Code.
 
-## Features
+## Fonctionnalités principales
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Détection automatique d'un projet AL (présence de `app.json` et fichiers `.al`).
+- Scan des objets `table` et `tableextension`.
+- Extraction des champs : nom, type, caption, FieldClass (exclusion des FlowFields/FlowFilters), TableRelation.
+- Identification des PK via les keys et des FK via `TableRelation`.
+- Fusion des `tableextension` avec les tables de base.
+- Génération d'un diagramme Mermaid (ERD) affiché dans un WebView, avec options de copie et d'export `.mmd`.
 
-For example if there is an image subfolder under your extension project workspace:
+## Commandes et utilisation
 
-\!\[feature X\]\(images/feature-x.png\)
+- Commande principale : `al-db-schema.generateSchema`
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+Utilisation rapide :
+1. Ouvrir le dossier de projet AL dans VS Code (doit contenir `app.json`).
+2. Ouvrir la palette de commandes : `Ctrl+Shift+P`.
+3. Lancer `AL DB Schema: Générer le schéma de base de données` (ou tapez `al-db-schema.generateSchema`).
+4. Un WebView s'ouvre affichant le diagramme Mermaid généré.
+5. Dans le WebView :
+   - Copier le code Mermaid.
+   - Télécharger le fichier `.mmd`.
+   - Rerafraîchir ou régénérer après modification des fichiers `.al`.
 
-## Requirements
+### Raccourcis
+- Palette de commandes : `Ctrl+Shift+P` → tapez `AL DB Schema`.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## Comportement attendu et détection
 
-## Extension Settings
+- Le scanner recherche `app.json` à la racine du workspace et tous les fichiers `.al` dans l'arborescence.
+- Les `tableextension` présents dans le même workspace sont fusionnés dans la table cible.
+- Les champs avec `FieldClass = FlowField` ou `FlowFilter` sont exclus.
+- La première clé déclarée dans le bloc `keys` est considérée comme PK par défaut.
+- Les relations sont extraites depuis les propriétés `TableRelation` des champs.
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## Sorties
 
-For example:
+- Diagramme Mermaid rendu dans un WebView.
+- Option pour copier le code Mermaid.
+- Export en fichier `.mmd` (format texte Mermaid).
 
-This extension contributes the following settings:
+## Options / Configuration
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+Aucune configuration requise par défaut. (Possibilité d'ajouter des options dans `contributes.configuration` si nécessaire : ex. filtres, inclusion/exclusion de schémas, etc.)
 
-## Known Issues
+## Dépannage
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Aucun rendu ? Vérifier la présence de `app.json` et d'au moins un fichier `.al`.
+- Données manquantes ? Vérifier la syntaxe AL (noms de champs, clés, TableRelation).
+- Si le WebView reste vide, ouvrir la console de l'extension (Affichage → Afficher → Sortie) pour les logs.
 
-## Release Notes
+## Contribution
 
-Users appreciate release notes as you update your extension.
+Contributions et rapports de bugs bienvenus via issues sur le dépôt.
 
-### 1.0.0
+## Licence
 
-Initial release of ...
+Ajouter ici la licence du projet (ex. MIT).
 
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+**Fin**
