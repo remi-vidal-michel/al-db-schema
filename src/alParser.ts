@@ -5,21 +5,21 @@ export function parseAlFile(content: string, filePath: string, objectNamePrefix?
 
     const normalizeName = buildPrefixStripper(objectNamePrefix);
 
-    const objectRegex = /\b(table|tableextension)\s+(\d+)\s+"([^"]+)"\s*(?:extends\s+"([^"]+)")?\s*\{/gi;
+    const objectRegex = /\b(table|tableextension)\s+(\d+)\s+(?:"([^"]+)"|([A-Za-z_][\w]*))\s*(?:extends\s+(?:"([^"]+)"|([A-Za-z_][\w]*)))?\s*\{/gi;
 
     let match: RegExpExecArray | null;
     while ((match = objectRegex.exec(content)) !== null) {
         const objectType = match[1].toLowerCase() as 'table' | 'tableextension';
         const id = parseInt(match[2], 10);
-        const name = normalizeName(match[3]);
-        const extendsTable = normalizeName(match[4] ?? '');
+        const name = normalizeName(match[3] ?? match[4] ?? '');
+        const extendsTable = normalizeName(match[5] ?? match[6] ?? '');
 
         const bodyStart = match.index + match[0].length;
         const body = extractBalancedBlock(content, bodyStart);
 
         const caption = normalizeName(extractTableCaption(body));
         const fields = parseFields(body, normalizeName, objectNamePrefix);
-        const keys = parseKeys(body);
+        const keys = parseKeys(body, normalizeName);
 
         const pkKey = keys.find(k => k.isPrimaryKey);
         if (pkKey) {
@@ -80,13 +80,13 @@ function parseFields(
 
     const fieldsBody = extractBalancedBlock(body, fieldsBlockMatch.index + fieldsBlockMatch[0].length);
 
-    const fieldRegex = /\bfield\s*\(\s*(\d+)\s*;\s*"([^"]+)"\s*;\s*([^)]+)\)/gi;
+    const fieldRegex = /\bfield\s*\(\s*(\d+)\s*;\s*(?:"([^"]+)"|([^;]+))\s*;\s*([^)]+)\)/gi;
     let fm: RegExpExecArray | null;
 
     while ((fm = fieldRegex.exec(fieldsBody)) !== null) {
         const fieldId = parseInt(fm[1], 10);
-        const fieldName = normalizeName(fm[2]);
-        const fieldType = fm[3].trim();
+        const fieldName = normalizeName((fm[2] ?? fm[3] ?? '').trim());
+        const fieldType = fm[4].trim();
 
         const afterField = fieldsBody.substring(fm.index + fm[0].length);
         const fieldBody = extractFieldBody(afterField);
@@ -124,7 +124,7 @@ function extractFieldBody(afterField: string): string {
     return extractBalancedBlock(trimmed, 1);
 }
 
-function parseKeys(body: string): AlKey[] {
+function parseKeys(body: string, normalizeName: (value: string) => string): AlKey[] {
     const keys: AlKey[] = [];
 
     const keysBlockMatch = /\bkeys\s*\{/i.exec(body);
@@ -134,13 +134,13 @@ function parseKeys(body: string): AlKey[] {
 
     const keysBody = extractBalancedBlock(body, keysBlockMatch.index + keysBlockMatch[0].length);
 
-    const keyRegex = /\bkey\s*\(\s*([^;]+)\s*;\s*([^)]+)\)/gi;
+    const keyRegex = /\bkey\s*\(\s*(?:"([^"]+)"|([^;]+))\s*;\s*([^)]+)\)/gi;
     let km: RegExpExecArray | null;
     let isFirst = true;
 
     while ((km = keyRegex.exec(keysBody)) !== null) {
-        const keyName = km[1].trim().replace(/^"|"$/g, '');
-        const keyFields = km[2].split(',').map(f => f.trim().replace(/^"|"$/g, ''));
+        const keyName = normalizeName((km[1] ?? km[2] ?? '').trim().replace(/^"|"$/g, ''));
+        const keyFields = parseKeyFields(km[3]).map(normalizeName);
 
         keys.push({
             name: keyName,
@@ -151,6 +151,19 @@ function parseKeys(body: string): AlKey[] {
     }
 
     return keys;
+}
+
+function parseKeyFields(raw: string): string[] {
+    const fields: string[] = [];
+    const regex = /"([^"]+)"|([^,]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(raw)) !== null) {
+        const value = (match[1] ?? match[2] ?? '').trim();
+        if (value) {
+            fields.push(value);
+        }
+    }
+    return fields;
 }
 
 function extractProperty(fieldBody: string, propertyName: string): string {

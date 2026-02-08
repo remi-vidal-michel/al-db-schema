@@ -530,89 +530,48 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             const ROW_SPACING = 40;
             const COLUMN_SPACING = 80;
 
-            const outgoing = new Map();
-            const incoming = new Map();
-            
+            const parents = new Map();
+            const children = new Map();
+
             for (const e of entities) {
                 const key = e.name.toLowerCase();
-                outgoing.set(key, new Set());
-                incoming.set(key, new Set());
+                parents.set(key, new Set());
+                children.set(key, new Set());
             }
 
             for (const r of data.relations) {
-                const fromKey = r.from.toLowerCase();
-                const toKey = r.to.toLowerCase();
-                if (outgoing.has(fromKey) && incoming.has(toKey)) {
-                    outgoing.get(fromKey).add(toKey);
-                    incoming.get(toKey).add(fromKey);
+                const child = r.from.toLowerCase();
+                const parent = r.to.toLowerCase();
+                if (parents.has(child) && children.has(parent)) {
+                    parents.get(child).add(parent);
+                    children.get(parent).add(child);
                 }
             }
 
             const ranks = new Map();
-            const visited = new Set();
-            
-            function computeRank(key, currentRank) {
-                if (ranks.has(key)) {
-                    if (currentRank > ranks.get(key)) {
-                        ranks.set(key, currentRank);
-                    } else {
-                        return;
-                    }
-                } else {
-                    ranks.set(key, currentRank);
-                }
-                
-                for (const child of incoming.get(key) || []) {
-                    computeRank(child, currentRank + 1);
-                }
-            }
-
-            const roots = [];
             for (const e of entities) {
-                const key = e.name.toLowerCase();
-                const out = outgoing.get(key)?.size || 0;
-                const inc = incoming.get(key)?.size || 0;
-                if (out === 0 && inc > 0) {
-                    roots.push(key);
-                } else if (out === 0 && inc === 0) {
-                    ranks.set(key, 0);
-                }
+                ranks.set(e.name.toLowerCase(), 0);
             }
 
-            if (roots.length === 0) {
-                const sorted = [...entities].sort((a, b) => {
-                    const aOut = outgoing.get(a.name.toLowerCase())?.size || 0;
-                    const bOut = outgoing.get(b.name.toLowerCase())?.size || 0;
-                    return aOut - bOut;
-                });
-                for (const e of sorted) {
-                    const key = e.name.toLowerCase();
-                    if (!ranks.has(key)) {
-                        roots.push(key);
-                        break;
-                    }
-                }
-            }
-
-            for (const root of roots) {
-                computeRank(root, 0);
-            }
-
-            for (const e of entities) {
-                const key = e.name.toLowerCase();
-                if (!ranks.has(key)) {
-                    let minNeighborRank = Infinity;
-                    for (const target of outgoing.get(key) || []) {
-                        if (ranks.has(target)) {
-                            minNeighborRank = Math.min(minNeighborRank, ranks.get(target));
+            for (let iter = 0; iter < entities.length; iter++) {
+                let changed = false;
+                for (const [child, parentSet] of parents.entries()) {
+                    for (const parent of parentSet) {
+                        const nextRank = (ranks.get(parent) || 0) + 1;
+                        if (nextRank > (ranks.get(child) || 0)) {
+                            ranks.set(child, nextRank);
+                            changed = true;
                         }
                     }
-                    if (minNeighborRank === Infinity) {
-                        ranks.set(key, 0);
-                    } else {
-                        ranks.set(key, minNeighborRank + 1);
-                    }
                 }
+                if (!changed) break;
+            }
+
+            const uniqueRanks = Array.from(new Set(ranks.values())).sort((a, b) => a - b);
+            const rankMap = new Map();
+            uniqueRanks.forEach((rank, index) => rankMap.set(rank, index));
+            for (const [key, rank] of ranks.entries()) {
+                ranks.set(key, rankMap.get(rank));
             }
 
             const layers = new Map();
@@ -625,143 +584,117 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 layers.get(rank).push(key);
             }
 
-            for (const [rank, keys] of layers.entries()) {
-                keys.sort((a, b) => {
+            const getLayerIndex = (key) => {
+                const r = ranks.get(key);
+                const layer = layers.get(r);
+                return layer ? layer.indexOf(key) : 0;
+            };
+
+            const orderLayer = (rank) => {
+                const layer = layers.get(rank) || [];
+                layer.sort((a, b) => {
                     let aScore = 0, bScore = 0, aCount = 0, bCount = 0;
-                    
-                    for (const target of outgoing.get(a) || []) {
-                        const targetLayer = layers.get(ranks.get(target));
-                        if (targetLayer) {
-                            aScore += targetLayer.indexOf(target);
-                            aCount++;
-                        }
+
+                    for (const p of parents.get(a) || []) {
+                        aScore += getLayerIndex(p);
+                        aCount++;
                     }
-                    for (const source of incoming.get(a) || []) {
-                        const sourceLayer = layers.get(ranks.get(source));
-                        if (sourceLayer) {
-                            aScore += sourceLayer.indexOf(source);
-                            aCount++;
-                        }
+                    for (const c of children.get(a) || []) {
+                        aScore += getLayerIndex(c);
+                        aCount++;
                     }
-                    
-                    for (const target of outgoing.get(b) || []) {
-                        const targetLayer = layers.get(ranks.get(target));
-                        if (targetLayer) {
-                            bScore += targetLayer.indexOf(target);
-                            bCount++;
-                        }
+
+                    for (const p of parents.get(b) || []) {
+                        bScore += getLayerIndex(p);
+                        bCount++;
                     }
-                    for (const source of incoming.get(b) || []) {
-                        const sourceLayer = layers.get(ranks.get(source));
-                        if (sourceLayer) {
-                            bScore += sourceLayer.indexOf(source);
-                            bCount++;
-                        }
+                    for (const c of children.get(b) || []) {
+                        bScore += getLayerIndex(c);
+                        bCount++;
                     }
-                    
+
                     const aAvg = aCount > 0 ? aScore / aCount : 0;
                     const bAvg = bCount > 0 ? bScore / bCount : 0;
                     return aAvg - bAvg;
                 });
-            }
+            };
 
-            for (let iter = 0; iter < 5; iter++) {
+            for (let iter = 0; iter < 4; iter++) {
                 for (let rank = 0; rank <= maxRank; rank++) {
-                    const layer = layers.get(rank) || [];
-                    layer.sort((a, b) => {
-                        let aPos = 0, bPos = 0, aCount = 0, bCount = 0;
-                        
-                        for (const n of [...(outgoing.get(a) || []), ...(incoming.get(a) || [])]) {
-                            const nRank = ranks.get(n);
-                            const nLayer = layers.get(nRank);
-                            if (nLayer) {
-                                aPos += nLayer.indexOf(n);
-                                aCount++;
-                            }
-                        }
-                        for (const n of [...(outgoing.get(b) || []), ...(incoming.get(b) || [])]) {
-                            const nRank = ranks.get(n);
-                            const nLayer = layers.get(nRank);
-                            if (nLayer) {
-                                bPos += nLayer.indexOf(n);
-                                bCount++;
-                            }
-                        }
-                        
-                        return (aCount > 0 ? aPos / aCount : 0) - (bCount > 0 ? bPos / bCount : 0);
-                    });
+                    orderLayer(rank);
+                }
+                for (let rank = maxRank; rank >= 0; rank--) {
+                    orderLayer(rank);
                 }
             }
 
-            const columnHeights = new Map();
-            
             for (let rank = 0; rank <= maxRank; rank++) {
                 const layer = layers.get(rank) || [];
                 let y = PADDING;
                 const x = PADDING + rank * (COLUMN_WIDTH + COLUMN_SPACING);
-                
+
                 for (const key of layer) {
                     const dim = dimensions.get(key);
                     if (!dim) continue;
-                    
+
                     const snappedX = snapToGrid(x);
                     const snappedY = snapToGrid(y);
-                    
+
                     positions.set(key, {
                         x: snappedX,
                         y: snappedY,
                         w: dim.w,
                         h: dim.h
                     });
-                    
+
                     y += dim.h + ROW_SPACING;
                 }
-                
-                columnHeights.set(rank, y);
             }
 
             for (let iter = 0; iter < 3; iter++) {
                 for (let rank = 0; rank <= maxRank; rank++) {
                     const layer = layers.get(rank) || [];
-                    
+                    const targetY = new Map();
+
                     for (const key of layer) {
                         const pos = positions.get(key);
                         if (!pos) continue;
-                        
-                        const neighbors = [...(outgoing.get(key) || []), ...(incoming.get(key) || [])];
-                        if (neighbors.length === 0) continue;
-                        
-                        let targetY = 0;
+
+                        const neighbors = [...(parents.get(key) || []), ...(children.get(key) || [])];
+                        if (neighbors.length === 0) {
+                            targetY.set(key, pos.y);
+                            continue;
+                        }
+
+                        let sum = 0;
                         let count = 0;
                         for (const n of neighbors) {
                             const nPos = positions.get(n);
                             if (nPos) {
-                                targetY += nPos.y + nPos.h / 2;
+                                sum += nPos.y + nPos.h / 2;
                                 count++;
                             }
                         }
-                        
-                        if (count > 0) {
-                            const avgY = targetY / count - pos.h / 2;
-                            const newY = snapToGrid(pos.y + (avgY - pos.y) * 0.3);
-                            
-                            let canMove = true;
-                            for (const otherKey of layer) {
-                                if (otherKey === key) continue;
-                                const otherPos = positions.get(otherKey);
-                                if (otherPos) {
-                                    if (newY < otherPos.y + otherPos.h + ROW_SPACING &&
-                                        newY + pos.h + ROW_SPACING > otherPos.y) {
-                                        canMove = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            if (canMove && newY >= PADDING) {
-                                pos.y = newY;
-                            }
-                        }
+
+                        const avg = count > 0 ? (sum / count - pos.h / 2) : pos.y;
+                        targetY.set(key, avg);
+                    }
+
+                    layer.sort((a, b) => (targetY.get(a) || 0) - (targetY.get(b) || 0));
+
+                    let y = PADDING;
+                    const x = PADDING + rank * (COLUMN_WIDTH + COLUMN_SPACING);
+                    for (const key of layer) {
+                        const dim = dimensions.get(key);
+                        if (!dim) continue;
+
+                        positions.set(key, {
+                            x: snapToGrid(x),
+                            y: snapToGrid(y),
+                            w: dim.w,
+                            h: dim.h
+                        });
+                        y += dim.h + ROW_SPACING;
                     }
                 }
             }
