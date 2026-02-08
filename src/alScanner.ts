@@ -41,11 +41,13 @@ export async function scanAlProject(workspaceFolder: vscode.Uri): Promise<AlProj
         '**/node_modules/**'
     );
 
+    const objectNamePrefix = getObjectNamePrefix(workspaceFolder);
+
     for (const fileUri of alFiles) {
         try {
             const raw = await vscode.workspace.fs.readFile(fileUri);
             const content = Buffer.from(raw).toString('utf-8');
-            const parsed = parseAlFile(content, fileUri.fsPath);
+            const parsed = parseAlFile(content, fileUri.fsPath, objectNamePrefix);
             result.tables.push(...parsed);
         } catch (err: unknown) {
             const relPath = path.relative(workspaceFolder.fsPath, fileUri.fsPath);
@@ -74,6 +76,12 @@ export async function scanAlProject(workspaceFolder: vscode.Uri): Promise<AlProj
     }
 
     return result;
+}
+
+function getObjectNamePrefix(workspaceFolder: vscode.Uri): string {
+    const config = vscode.workspace.getConfiguration('CRS', workspaceFolder);
+    const prefix = config.get<string>('ObjectNamePrefix');
+    return typeof prefix === 'string' ? prefix : '';
 }
 
 function isCueTable(name: string): boolean {

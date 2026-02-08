@@ -1,7 +1,9 @@
 import { AlField, AlKey, AlTable } from './types';
 
-export function parseAlFile(content: string, filePath: string): AlTable[] {
+export function parseAlFile(content: string, filePath: string, objectNamePrefix?: string): AlTable[] {
     const tables: AlTable[] = [];
+
+    const normalizeName = buildPrefixStripper(objectNamePrefix);
 
     const objectRegex = /\b(table|tableextension)\s+(\d+)\s+"([^"]+)"\s*(?:extends\s+"([^"]+)")?\s*\{/gi;
 
@@ -9,14 +11,14 @@ export function parseAlFile(content: string, filePath: string): AlTable[] {
     while ((match = objectRegex.exec(content)) !== null) {
         const objectType = match[1].toLowerCase() as 'table' | 'tableextension';
         const id = parseInt(match[2], 10);
-        const name = match[3];
-        const extendsTable = match[4] ?? '';
+        const name = normalizeName(match[3]);
+        const extendsTable = normalizeName(match[4] ?? '');
 
         const bodyStart = match.index + match[0].length;
         const body = extractBalancedBlock(content, bodyStart);
 
-        const caption = extractTableCaption(body);
-        const fields = parseFields(body);
+        const caption = normalizeName(extractTableCaption(body));
+        const fields = parseFields(body, normalizeName, objectNamePrefix);
         const keys = parseKeys(body);
 
         const pkKey = keys.find(k => k.isPrimaryKey);
@@ -31,7 +33,7 @@ export function parseAlFile(content: string, filePath: string): AlTable[] {
         for (const f of fields) {
             if (f.tableRelation) {
                 f.isForeignKey = true;
-                const resolved = resolveTableRelation(f.tableRelation);
+                const resolved = resolveTableRelation(f.tableRelation, normalizeName);
                 f.relatedTable = resolved.table;
                 f.relatedField = resolved.field;
             }
@@ -64,7 +66,11 @@ function extractTableCaption(body: string): string {
     return '';
 }
 
-function parseFields(body: string): AlField[] {
+function parseFields(
+    body: string,
+    normalizeName: (value: string) => string,
+    objectNamePrefix?: string
+): AlField[] {
     const fields: AlField[] = [];
 
     const fieldsBlockMatch = /\bfields\s*\{/i.exec(body);
@@ -79,15 +85,15 @@ function parseFields(body: string): AlField[] {
 
     while ((fm = fieldRegex.exec(fieldsBody)) !== null) {
         const fieldId = parseInt(fm[1], 10);
-        const fieldName = fm[2];
+        const fieldName = normalizeName(fm[2]);
         const fieldType = fm[3].trim();
 
         const afterField = fieldsBody.substring(fm.index + fm[0].length);
         const fieldBody = extractFieldBody(afterField);
 
-        const caption = extractProperty(fieldBody, 'Caption');
+        const caption = normalizeName(extractProperty(fieldBody, 'Caption'));
         const fieldClass = extractProperty(fieldBody, 'FieldClass') || 'Normal';
-        const tableRelation = extractTableRelation(fieldBody);
+        const tableRelation = extractTableRelation(fieldBody, objectNamePrefix);
 
         if (fieldClass.toLowerCase() === 'flowfield' || fieldClass.toLowerCase() === 'flowfilter') {
             continue;
@@ -163,16 +169,21 @@ function extractProperty(fieldBody: string, propertyName: string): string {
     return '';
 }
 
-function extractTableRelation(fieldBody: string): string {
+function extractTableRelation(fieldBody: string, objectNamePrefix?: string): string {
     const regex = /\bTableRelation\s*=\s*([\s\S]*?);/i;
     const match = regex.exec(fieldBody);
     if (match) {
-        return match[1].replace(/\s+/g, ' ').trim();
+        const normalized = match[1].replace(/\s+/g, ' ').trim();
+        if (!objectNamePrefix) {
+            return normalized;
+        }
+        const strip = buildPrefixStripper(objectNamePrefix);
+        return normalized.replace(/"([^"]+)"/g, (_, name) => `"${strip(name)}"`);
     }
     return '';
 }
 
-function resolveTableRelation(raw: string): { table: string; field: string } {
+function resolveTableRelation(raw: string, normalizeName: (value: string) => string): { table: string; field: string } {
     if (!raw) {
         return { table: '', field: '' };
     }
@@ -182,10 +193,10 @@ function resolveTableRelation(raw: string): { table: string; field: string } {
     const tableMatch = /^"([^"]+)"/.exec(cleaned);
     if (!tableMatch) {
         const unquoted = /^(\w+)/.exec(cleaned);
-        return { table: unquoted ? unquoted[1] : raw, field: '' };
+        return { table: normalizeName(unquoted ? unquoted[1] : raw), field: '' };
     }
 
-    const table = tableMatch[1];
+    const table = normalizeName(tableMatch[1]);
     cleaned = cleaned.substring(tableMatch[0].length).trim();
 
     let field = '';
@@ -193,16 +204,29 @@ function resolveTableRelation(raw: string): { table: string; field: string } {
         cleaned = cleaned.substring(1);
         const fieldMatch = /^"([^"]+)"/.exec(cleaned);
         if (fieldMatch) {
-            field = fieldMatch[1];
+            field = normalizeName(fieldMatch[1]);
         } else {
             const uf = /^(\w+)/.exec(cleaned);
             if (uf) {
-                field = uf[1];
+                field = normalizeName(uf[1]);
             }
         }
     }
 
     return { table, field };
+}
+
+function buildPrefixStripper(prefix?: string): (value: string) => string {
+    if (!prefix) {
+        return (value: string) => value;
+    }
+
+    return (value: string) => {
+        if (!value) {
+            return value;
+        }
+        return value.startsWith(prefix) ? value.substring(prefix.length) : value;
+    };
 }
 
 function extractBalancedBlock(content: string, startAfterBrace: number): string {
