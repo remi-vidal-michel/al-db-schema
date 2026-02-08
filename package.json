@@ -2,6 +2,7 @@
   "name": "al-db-schema",
   "displayName": "AL DB Schema",
   "description": "Generate DB schemas from yours Business Central AL projects inside VSCode",
+  "repository": {"type": "git", "url": "https://github.com/remi-vidal-michel/al-db-schema"},
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.109.0"
@@ -15,7 +16,7 @@
     "commands": [
       {
         "command": "al-db-schema.generateSchema",
-        "title": "AL DB Schema: Générer le schéma de base de données"
+        "title": "AL DB Schema: Generate Database Schema"
       }
     ]
   },
