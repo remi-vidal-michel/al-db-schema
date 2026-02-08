@@ -56,9 +56,9 @@ function extractTableCaption(body: string): string {
     const fieldsStart = body.search(/\bfields\s*\{/i);
     const topLevel = fieldsStart > 0 ? body.substring(0, fieldsStart) : body.substring(0, 500);
     
-    const captionMatch = /\bCaption\s*=\s*'([^']*)'/i.exec(topLevel);
+    const captionMatch = /\bCaption\s*=\s*'((?:[^']|'')*)'/i.exec(topLevel);
     if (captionMatch) {
-        return captionMatch[1];
+        return captionMatch[1].replace(/''/g, "'");
     }
     
     return '';
@@ -148,10 +148,10 @@ function parseKeys(body: string): AlKey[] {
 }
 
 function extractProperty(fieldBody: string, propertyName: string): string {
-    const regex = new RegExp(`\\b${propertyName}\\s*=\\s*'([^']*)'`, 'i');
+    const regex = new RegExp(`\\b${propertyName}\\s*=\\s*'((?:[^']|'')*)'`, 'i');
     const match = regex.exec(fieldBody);
     if (match) {
-        return match[1];
+        return match[1].replace(/''/g, "'");
     }
 
     const regex2 = new RegExp(`\\b${propertyName}\\s*=\\s*([^;]+);`, 'i');

@@ -101,6 +101,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --pk-text: #ffffff;
             --fk-bg: #4299e1;
             --fk-text: #ffffff;
+            --drawer-bg: #1e1e1e;
+            --drawer-border: #3c3c3c;
+            --drawer-item-hover: #2a2d2e;
         }
         body.vscode-dark {
             --table-bg: #2d3748;
@@ -108,6 +111,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --field-text: #e2e8f0;
             --type-text: #a0aec0;
             --row-alt: #1a202c;
+        }
+        body.vscode-light {
+            --drawer-bg: #f3f3f3;
+            --drawer-border: #d4d4d4;
+            --drawer-item-hover: #e8e8e8;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -127,6 +135,12 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             background: var(--vscode-sideBar-background, #252526);
             border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
             flex-shrink: 0;
+            z-index: 100;
+        }
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
         .toolbar-title {
             display: flex;
@@ -146,7 +160,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             align-items: center;
             gap: 8px;
         }
-        .toolbar-controls button {
+        .toolbar-controls button, .btn {
             background: var(--vscode-button-background, #0e639c);
             color: var(--vscode-button-foreground, #fff);
             border: none;
@@ -155,13 +169,92 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             border-radius: 3px;
             font-size: 12px;
         }
-        .toolbar-controls button:hover {
+        .toolbar-controls button:hover, .btn:hover {
             background: var(--vscode-button-hoverBackground, #1177bb);
+        }
+        .btn-icon {
+            padding: 5px 8px;
+            font-size: 14px;
         }
         .zoom-label {
             font-size: 11px;
             min-width: 45px;
             text-align: center;
+        }
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .drawer {
+            width: 250px;
+            background: var(--drawer-bg);
+            border-right: 1px solid var(--drawer-border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: margin-left 0.2s ease;
+        }
+        .drawer.collapsed {
+            margin-left: -250px;
+        }
+        .drawer-header {
+            padding: 12px;
+            border-bottom: 1px solid var(--drawer-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .drawer-header h2 {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            opacity: 0.8;
+        }
+        .drawer-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .drawer-actions button {
+            background: transparent;
+            border: none;
+            color: var(--vscode-editor-foreground, #e2e8f0);
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 10px;
+            opacity: 0.7;
+        }
+        .drawer-actions button:hover {
+            opacity: 1;
+        }
+        .drawer-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+        .drawer-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 12px;
+            cursor: pointer;
+            gap: 8px;
+        }
+        .drawer-item:hover {
+            background: var(--drawer-item-hover);
+        }
+        .drawer-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        .drawer-item-label {
+            font-size: 12px;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .drawer-item.hidden-table .drawer-item-label {
+            opacity: 0.5;
+            text-decoration: line-through;
         }
         .canvas-container {
             flex: 1;
@@ -193,6 +286,15 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             max-width: 320px;
             overflow: hidden;
             pointer-events: auto;
+            cursor: move;
+            user-select: none;
+        }
+        .table-box.dragging-card {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        .table-box.hidden {
+            display: none;
         }
         .table-header {
             background: var(--header-bg);
@@ -261,6 +363,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             stroke: #4299e1;
             stroke-width: 2;
             opacity: 0.7;
+            pointer-events: stroke;
         }
         .relation-line:hover {
             opacity: 1;
@@ -270,43 +373,107 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 </head>
 <body>
     <div class="toolbar">
-        <div class="toolbar-title">
-            <h1>${title}</h1>
-            <span class="subtitle">${subtitle}</span>
+        <div class="toolbar-left">
+            <button class="btn btn-icon" id="btn-toggle-drawer" title="Toggle table list">☰</button>
+            <div class="toolbar-title">
+                <h1>${title}</h1>
+                <span class="subtitle">${subtitle}</span>
+            </div>
         </div>
         <div class="toolbar-controls">
             <button id="btn-fit">Fit</button>
-            <button id="btn-zoom-out">-</button>
+            <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
             <button id="btn-zoom-in">+</button>
         </div>
     </div>
-    <div class="canvas-container" id="canvas-container">
-        <div class="viewport" id="viewport"></div>
+    <div class="main-container">
+        <div class="drawer" id="drawer">
+            <div class="drawer-header">
+                <h2>Tables</h2>
+                <div class="drawer-actions">
+                    <button id="btn-show-all">All</button>
+                    <button id="btn-hide-all">None</button>
+                </div>
+            </div>
+            <div class="drawer-list" id="drawer-list"></div>
+        </div>
+        <div class="canvas-container" id="canvas-container">
+            <div class="viewport" id="viewport"></div>
+        </div>
     </div>
     <script>
         const data = ${dataJson};
         const container = document.getElementById('canvas-container');
         const viewport = document.getElementById('viewport');
         const zoomLabel = document.getElementById('zoom-label');
+        const drawer = document.getElementById('drawer');
+        const drawerList = document.getElementById('drawer-list');
 
         let scale = 1;
         let panX = 0;
         let panY = 0;
-        let isDragging = false;
+        let isPanning = false;
         let lastX = 0;
         let lastY = 0;
 
+        let draggingCard = null;
+        let cardStartX = 0;
+        let cardStartY = 0;
+        let cardOffsetX = 0;
+        let cardOffsetY = 0;
+
         const PADDING = 40;
-        const GAP_X = 60;
-        const GAP_Y = 50;
-        const HEADER_HEIGHT = 34;
-        const ROW_HEIGHT = 28;
+        const GAP_X = 80;
+        const GAP_Y = 60;
 
         const positions = new Map();
         const dimensions = new Map();
+        const visibility = new Map();
+        const boxElements = new Map();
+        let svgLayer = null;
 
         function init() {
+            buildDrawer();
+            createTableBoxes();
+            layoutTables();
+            drawRelations();
+            fitToView();
+            setupEventListeners();
+        }
+
+        function buildDrawer() {
+            const sorted = [...data.entities].sort((a, b) => 
+                a.displayName.localeCompare(b.displayName)
+            );
+            
+            for (const entity of sorted) {
+                visibility.set(entity.name.toLowerCase(), true);
+                
+                const item = document.createElement('div');
+                item.className = 'drawer-item';
+                item.dataset.entity = entity.name.toLowerCase();
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = true;
+                checkbox.addEventListener('change', () => {
+                    toggleTableVisibility(entity.name.toLowerCase(), checkbox.checked);
+                    item.classList.toggle('hidden-table', !checkbox.checked);
+                });
+                
+                const label = document.createElement('span');
+                label.className = 'drawer-item-label';
+                label.textContent = entity.displayName;
+                label.title = entity.displayName;
+                
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                drawerList.appendChild(item);
+            }
+        }
+
+        function createTableBoxes() {
             const adjacency = new Map();
             for (const e of data.entities) {
                 adjacency.set(e.name.toLowerCase(), new Set());
@@ -358,6 +525,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             for (const entity of ordered) {
                 const box = document.createElement('div');
                 box.className = 'table-box';
+                box.dataset.entity = entity.name.toLowerCase();
                 box.innerHTML = \`
                     <div class="table-header">\${escapeHtml(entity.displayName)}</div>
                     <div class="table-body">
@@ -373,24 +541,83 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                         \`).join('')}
                     </div>
                 \`;
+                
+                box.addEventListener('mousedown', (e) => startCardDrag(e, entity.name.toLowerCase()));
+                
                 viewport.appendChild(box);
+                boxElements.set(entity.name.toLowerCase(), box);
                 dimensions.set(entity.name.toLowerCase(), {
                     w: box.offsetWidth,
                     h: box.offsetHeight,
                     entity
                 });
             }
-
-            layoutGrid(ordered);
-            drawRelations();
-            fitToView();
+            
+            return ordered;
         }
 
-        function layoutGrid(ordered) {
+        function layoutTables() {
+            const ordered = [];
+            const adjacency = new Map();
+            
+            for (const e of data.entities) {
+                adjacency.set(e.name.toLowerCase(), new Set());
+            }
+            for (const r of data.relations) {
+                const fromKey = r.from.toLowerCase();
+                const toKey = r.to.toLowerCase();
+                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
+                    adjacency.get(fromKey).add(toKey);
+                    adjacency.get(toKey).add(fromKey);
+                }
+            }
+
+            const sorted = [...data.entities].sort((a, b) => {
+                const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
+                const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
+                if (bConns !== aConns) return bConns - aConns;
+                return a.displayName.localeCompare(b.displayName);
+            });
+
+            const visited = new Set();
+            const queue = [];
+
+            for (const e of sorted) {
+                if (visited.has(e.name.toLowerCase())) continue;
+                queue.push(e);
+                while (queue.length > 0) {
+                    const curr = queue.shift();
+                    const key = curr.name.toLowerCase();
+                    if (visited.has(key)) continue;
+                    visited.add(key);
+                    ordered.push(curr);
+                    
+                    const neighbors = Array.from(adjacency.get(key) || []);
+                    neighbors.sort((a, b) => {
+                        const aConns = adjacency.get(a)?.size || 0;
+                        const bConns = adjacency.get(b)?.size || 0;
+                        return bConns - aConns;
+                    });
+                    
+                    for (const nKey of neighbors) {
+                        if (!visited.has(nKey)) {
+                            const neighbor = data.entities.find(e => e.name.toLowerCase() === nKey);
+                            if (neighbor) queue.push(neighbor);
+                        }
+                    }
+                }
+            }
+
+            for (const e of data.entities) {
+                if (!visited.has(e.name.toLowerCase())) {
+                    ordered.push(e);
+                }
+            }
+
             const count = ordered.length;
             if (count === 0) return;
 
-            const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.5)));
+            const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.2)));
             const colWidths = [];
             const rowHeights = [];
 
@@ -422,27 +649,32 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 }
 
                 positions.set(entity.name.toLowerCase(), { x, y, w: dim.w, h: dim.h });
-
-                const boxes = viewport.querySelectorAll('.table-box');
-                const idx = ordered.indexOf(entity);
-                if (boxes[idx]) {
-                    boxes[idx].style.left = x + 'px';
-                    boxes[idx].style.top = y + 'px';
+                
+                const box = boxElements.get(entity.name.toLowerCase());
+                if (box) {
+                    box.style.left = x + 'px';
+                    box.style.top = y + 'px';
                 }
             }
         }
 
         function drawRelations() {
-            let maxX = 0, maxY = 0;
-            for (const pos of positions.values()) {
-                maxX = Math.max(maxX, pos.x + pos.w);
-                maxY = Math.max(maxY, pos.y + pos.h);
+            if (svgLayer) {
+                svgLayer.remove();
             }
 
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('class', 'svg-layer');
-            svg.setAttribute('width', maxX + PADDING);
-            svg.setAttribute('height', maxY + PADDING);
+            let maxX = 0, maxY = 0;
+            for (const [key, pos] of positions.entries()) {
+                if (visibility.get(key)) {
+                    maxX = Math.max(maxX, pos.x + pos.w);
+                    maxY = Math.max(maxY, pos.y + pos.h);
+                }
+            }
+
+            svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgLayer.setAttribute('class', 'svg-layer');
+            svgLayer.setAttribute('width', maxX + PADDING * 2);
+            svgLayer.setAttribute('height', maxY + PADDING * 2);
 
             const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
             defs.innerHTML = \`
@@ -450,66 +682,152 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     <polygon points="0 0, 10 3.5, 0 7" fill="#4299e1" />
                 </marker>
             \`;
-            svg.appendChild(defs);
+            svgLayer.appendChild(defs);
 
             const drawn = new Set();
             for (const rel of data.relations) {
-                const key = \`\${rel.from.toLowerCase()}|\${rel.to.toLowerCase()}\`;
+                const fromKey = rel.from.toLowerCase();
+                const toKey = rel.to.toLowerCase();
+                
+                if (!visibility.get(fromKey) || !visibility.get(toKey)) continue;
+                
+                const key = \`\${fromKey}|\${toKey}\`;
                 if (drawn.has(key)) continue;
                 drawn.add(key);
 
-                const fromPos = positions.get(rel.from.toLowerCase());
-                const toPos = positions.get(rel.to.toLowerCase());
+                const fromPos = positions.get(fromKey);
+                const toPos = positions.get(toKey);
                 if (!fromPos || !toPos) continue;
 
-                const fromCenter = { x: fromPos.x + fromPos.w / 2, y: fromPos.y + fromPos.h / 2 };
-                const toCenter = { x: toPos.x + toPos.w / 2, y: toPos.y + toPos.h / 2 };
-
-                const dx = toCenter.x - fromCenter.x;
-                const dy = toCenter.y - fromCenter.y;
-
-                let x1, y1, x2, y2;
-
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    if (dx > 0) {
-                        x1 = fromPos.x + fromPos.w;
-                        x2 = toPos.x;
-                    } else {
-                        x1 = fromPos.x;
-                        x2 = toPos.x + toPos.w;
-                    }
-                    y1 = fromCenter.y;
-                    y2 = toCenter.y;
-                } else {
-                    if (dy > 0) {
-                        y1 = fromPos.y + fromPos.h;
-                        y2 = toPos.y;
-                    } else {
-                        y1 = fromPos.y;
-                        y2 = toPos.y + toPos.h;
-                    }
-                    x1 = fromCenter.x;
-                    x2 = toCenter.x;
-                }
-
-                const offset = Math.min(Math.abs(dx), Math.abs(dy)) * 0.4 + 30;
-                let path;
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    const cx = (x1 + x2) / 2;
-                    path = \`M \${x1} \${y1} C \${cx} \${y1}, \${cx} \${y2}, \${x2} \${y2}\`;
-                } else {
-                    const cy = (y1 + y2) / 2;
-                    path = \`M \${x1} \${y1} C \${x1} \${cy}, \${x2} \${cy}, \${x2} \${y2}\`;
-                }
-
+                const path = calculatePath(fromPos, toPos);
+                
                 const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 pathEl.setAttribute('d', path);
                 pathEl.setAttribute('class', 'relation-line');
                 pathEl.setAttribute('marker-end', 'url(#arrow)');
-                svg.appendChild(pathEl);
+                svgLayer.appendChild(pathEl);
             }
 
-            viewport.insertBefore(svg, viewport.firstChild);
+            viewport.insertBefore(svgLayer, viewport.firstChild);
+        }
+
+        function calculatePath(fromPos, toPos) {
+            const fromCenter = { x: fromPos.x + fromPos.w / 2, y: fromPos.y + fromPos.h / 2 };
+            const toCenter = { x: toPos.x + toPos.w / 2, y: toPos.y + toPos.h / 2 };
+
+            const dx = toCenter.x - fromCenter.x;
+            const dy = toCenter.y - fromCenter.y;
+
+            let x1, y1, x2, y2;
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) {
+                    x1 = fromPos.x + fromPos.w;
+                    x2 = toPos.x;
+                } else {
+                    x1 = fromPos.x;
+                    x2 = toPos.x + toPos.w;
+                }
+                y1 = fromCenter.y;
+                y2 = toCenter.y;
+            } else {
+                if (dy > 0) {
+                    y1 = fromPos.y + fromPos.h;
+                    y2 = toPos.y;
+                } else {
+                    y1 = fromPos.y;
+                    y2 = toPos.y + toPos.h;
+                }
+                x1 = fromCenter.x;
+                x2 = toCenter.x;
+            }
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                const cx = (x1 + x2) / 2;
+                return \`M \${x1} \${y1} C \${cx} \${y1}, \${cx} \${y2}, \${x2} \${y2}\`;
+            } else {
+                const cy = (y1 + y2) / 2;
+                return \`M \${x1} \${y1} C \${x1} \${cy}, \${x2} \${cy}, \${x2} \${y2}\`;
+            }
+        }
+
+        function toggleTableVisibility(entityKey, visible) {
+            visibility.set(entityKey, visible);
+            const box = boxElements.get(entityKey);
+            if (box) {
+                box.classList.toggle('hidden', !visible);
+            }
+            drawRelations();
+        }
+
+        function showAllTables() {
+            for (const key of visibility.keys()) {
+                visibility.set(key, true);
+                const box = boxElements.get(key);
+                if (box) box.classList.remove('hidden');
+            }
+            drawerList.querySelectorAll('.drawer-item').forEach(item => {
+                item.classList.remove('hidden-table');
+                item.querySelector('input').checked = true;
+            });
+            drawRelations();
+        }
+
+        function hideAllTables() {
+            for (const key of visibility.keys()) {
+                visibility.set(key, false);
+                const box = boxElements.get(key);
+                if (box) box.classList.add('hidden');
+            }
+            drawerList.querySelectorAll('.drawer-item').forEach(item => {
+                item.classList.add('hidden-table');
+                item.querySelector('input').checked = false;
+            });
+            drawRelations();
+        }
+
+        function startCardDrag(e, entityKey) {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            
+            draggingCard = entityKey;
+            const box = boxElements.get(entityKey);
+            const pos = positions.get(entityKey);
+            
+            cardStartX = pos.x;
+            cardStartY = pos.y;
+            cardOffsetX = (e.clientX - container.getBoundingClientRect().left - panX) / scale - pos.x;
+            cardOffsetY = (e.clientY - container.getBoundingClientRect().top - panY) / scale - pos.y;
+            
+            box.classList.add('dragging-card');
+            container.style.cursor = 'grabbing';
+        }
+
+        function handleCardDrag(e) {
+            if (!draggingCard) return;
+            
+            const rect = container.getBoundingClientRect();
+            const x = (e.clientX - rect.left - panX) / scale - cardOffsetX;
+            const y = (e.clientY - rect.top - panY) / scale - cardOffsetY;
+            
+            const pos = positions.get(draggingCard);
+            pos.x = Math.max(0, x);
+            pos.y = Math.max(0, y);
+            
+            const box = boxElements.get(draggingCard);
+            box.style.left = pos.x + 'px';
+            box.style.top = pos.y + 'px';
+            
+            drawRelations();
+        }
+
+        function endCardDrag() {
+            if (draggingCard) {
+                const box = boxElements.get(draggingCard);
+                box.classList.remove('dragging-card');
+                draggingCard = null;
+                container.style.cursor = 'grab';
+            }
         }
 
         function updateTransform() {
@@ -519,9 +837,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
         function fitToView() {
             let maxX = 0, maxY = 0;
-            for (const pos of positions.values()) {
-                maxX = Math.max(maxX, pos.x + pos.w + PADDING);
-                maxY = Math.max(maxY, pos.y + pos.h + PADDING);
+            for (const [key, pos] of positions.entries()) {
+                if (visibility.get(key)) {
+                    maxX = Math.max(maxX, pos.x + pos.w + PADDING);
+                    maxY = Math.max(maxY, pos.y + pos.h + PADDING);
+                }
             }
 
             if (maxX === 0 || maxY === 0) return;
@@ -555,45 +875,61 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             updateTransform();
         }
 
-        container.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            zoom(delta, e.clientX, e.clientY);
-        });
+        function setupEventListeners() {
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                zoom(delta, e.clientX, e.clientY);
+            });
 
-        container.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            isDragging = true;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            container.classList.add('dragging');
-        });
+            container.addEventListener('mousedown', (e) => {
+                if (e.button !== 0 || draggingCard) return;
+                isPanning = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                container.classList.add('dragging');
+            });
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            panX += e.clientX - lastX;
-            panY += e.clientY - lastY;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            updateTransform();
-        });
+            document.addEventListener('mousemove', (e) => {
+                if (draggingCard) {
+                    handleCardDrag(e);
+                    return;
+                }
+                if (!isPanning) return;
+                panX += e.clientX - lastX;
+                panY += e.clientY - lastY;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                updateTransform();
+            });
 
-        document.addEventListener('mouseup', () => {
-            isDragging = false;
-            container.classList.remove('dragging');
-        });
+            document.addEventListener('mouseup', () => {
+                if (draggingCard) {
+                    endCardDrag();
+                }
+                isPanning = false;
+                container.classList.remove('dragging');
+            });
 
-        document.getElementById('btn-zoom-in').addEventListener('click', () => {
-            const rect = container.getBoundingClientRect();
-            zoom(0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
-        });
+            document.getElementById('btn-zoom-in').addEventListener('click', () => {
+                const rect = container.getBoundingClientRect();
+                zoom(0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            });
 
-        document.getElementById('btn-zoom-out').addEventListener('click', () => {
-            const rect = container.getBoundingClientRect();
-            zoom(-0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
-        });
+            document.getElementById('btn-zoom-out').addEventListener('click', () => {
+                const rect = container.getBoundingClientRect();
+                zoom(-0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
+            });
 
-        document.getElementById('btn-fit').addEventListener('click', fitToView);
+            document.getElementById('btn-fit').addEventListener('click', fitToView);
+
+            document.getElementById('btn-toggle-drawer').addEventListener('click', () => {
+                drawer.classList.toggle('collapsed');
+            });
+
+            document.getElementById('btn-show-all').addEventListener('click', showAllTables);
+            document.getElementById('btn-hide-all').addEventListener('click', hideAllTables);
+        }
 
         function escapeHtml(str) {
             return String(str)
