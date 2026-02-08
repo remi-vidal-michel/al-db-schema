@@ -431,7 +431,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             buildAdjacency();
             buildDrawer();
             createTableBoxes();
-            layoutTablesForceDirected();
+            layoutTablesHierarchical();
             drawRelations();
             fitToView();
             setupEventListeners();
@@ -521,137 +521,249 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
-        function layoutTablesForceDirected() {
+        function layoutTablesHierarchical() {
             const entities = data.entities;
             const count = entities.length;
             if (count === 0) return;
 
-            const cols = Math.max(2, Math.ceil(Math.sqrt(count * 1.5)));
-            const avgWidth = 260;
-            const avgHeight = 180;
-            const spacingX = avgWidth + 100;
-            const spacingY = avgHeight + 80;
+            const COLUMN_WIDTH = 380;
+            const ROW_SPACING = 40;
+            const COLUMN_SPACING = 80;
 
-            const sorted = [...entities].sort((a, b) => {
-                const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
-                const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
-                return bConns - aConns;
-            });
+            const outgoing = new Map();
+            const incoming = new Map();
+            
+            for (const e of entities) {
+                const key = e.name.toLowerCase();
+                outgoing.set(key, new Set());
+                incoming.set(key, new Set());
+            }
 
-            const placed = new Map();
+            for (const r of data.relations) {
+                const fromKey = r.from.toLowerCase();
+                const toKey = r.to.toLowerCase();
+                if (outgoing.has(fromKey) && incoming.has(toKey)) {
+                    outgoing.get(fromKey).add(toKey);
+                    incoming.get(toKey).add(fromKey);
+                }
+            }
+
+            const ranks = new Map();
             const visited = new Set();
-
-            function placeEntity(entity, targetX, targetY) {
-                const key = entity.name.toLowerCase();
-                const dim = dimensions.get(key);
-                if (!dim) return;
-
-                let x = snapToGrid(targetX);
-                let y = snapToGrid(targetY);
-
-                let attempts = 0;
-                while (hasOverlap(key, x, y, dim.w, dim.h) && attempts < 50) {
-                    const angle = (attempts * 137.5) * Math.PI / 180;
-                    const radius = 40 + attempts * 20;
-                    x = snapToGrid(targetX + Math.cos(angle) * radius);
-                    y = snapToGrid(targetY + Math.sin(angle) * radius);
-                    attempts++;
-                }
-
-                x = Math.max(PADDING, x);
-                y = Math.max(PADDING, y);
-
-                positions.set(key, { x, y, w: dim.w, h: dim.h });
-                placed.set(key, { x, y, w: dim.w, h: dim.h });
-            }
-
-            function hasOverlap(key, x, y, w, h) {
-                const margin = 40;
-                for (const [k, pos] of placed.entries()) {
-                    if (k === key) continue;
-                    if (x < pos.x + pos.w + margin && x + w + margin > pos.x &&
-                        y < pos.y + pos.h + margin && y + h + margin > pos.y) {
-                        return true;
+            
+            function computeRank(key, currentRank) {
+                if (ranks.has(key)) {
+                    if (currentRank > ranks.get(key)) {
+                        ranks.set(key, currentRank);
+                    } else {
+                        return;
                     }
+                } else {
+                    ranks.set(key, currentRank);
                 }
-                return false;
-            }
-
-            function bfsPlace(startEntity, startX, startY) {
-                const queue = [{ entity: startEntity, x: startX, y: startY }];
                 
-                while (queue.length > 0) {
-                    const { entity, x, y } = queue.shift();
-                    const key = entity.name.toLowerCase();
+                for (const child of incoming.get(key) || []) {
+                    computeRank(child, currentRank + 1);
+                }
+            }
+
+            const roots = [];
+            for (const e of entities) {
+                const key = e.name.toLowerCase();
+                const out = outgoing.get(key)?.size || 0;
+                const inc = incoming.get(key)?.size || 0;
+                if (out === 0 && inc > 0) {
+                    roots.push(key);
+                } else if (out === 0 && inc === 0) {
+                    ranks.set(key, 0);
+                }
+            }
+
+            if (roots.length === 0) {
+                const sorted = [...entities].sort((a, b) => {
+                    const aOut = outgoing.get(a.name.toLowerCase())?.size || 0;
+                    const bOut = outgoing.get(b.name.toLowerCase())?.size || 0;
+                    return aOut - bOut;
+                });
+                for (const e of sorted) {
+                    const key = e.name.toLowerCase();
+                    if (!ranks.has(key)) {
+                        roots.push(key);
+                        break;
+                    }
+                }
+            }
+
+            for (const root of roots) {
+                computeRank(root, 0);
+            }
+
+            for (const e of entities) {
+                const key = e.name.toLowerCase();
+                if (!ranks.has(key)) {
+                    let minNeighborRank = Infinity;
+                    for (const target of outgoing.get(key) || []) {
+                        if (ranks.has(target)) {
+                            minNeighborRank = Math.min(minNeighborRank, ranks.get(target));
+                        }
+                    }
+                    if (minNeighborRank === Infinity) {
+                        ranks.set(key, 0);
+                    } else {
+                        ranks.set(key, minNeighborRank + 1);
+                    }
+                }
+            }
+
+            const layers = new Map();
+            let maxRank = 0;
+            for (const [key, rank] of ranks.entries()) {
+                maxRank = Math.max(maxRank, rank);
+                if (!layers.has(rank)) {
+                    layers.set(rank, []);
+                }
+                layers.get(rank).push(key);
+            }
+
+            for (const [rank, keys] of layers.entries()) {
+                keys.sort((a, b) => {
+                    let aScore = 0, bScore = 0, aCount = 0, bCount = 0;
                     
-                    if (visited.has(key)) continue;
-                    visited.add(key);
+                    for (const target of outgoing.get(a) || []) {
+                        const targetLayer = layers.get(ranks.get(target));
+                        if (targetLayer) {
+                            aScore += targetLayer.indexOf(target);
+                            aCount++;
+                        }
+                    }
+                    for (const source of incoming.get(a) || []) {
+                        const sourceLayer = layers.get(ranks.get(source));
+                        if (sourceLayer) {
+                            aScore += sourceLayer.indexOf(source);
+                            aCount++;
+                        }
+                    }
                     
-                    placeEntity(entity, x, y);
+                    for (const target of outgoing.get(b) || []) {
+                        const targetLayer = layers.get(ranks.get(target));
+                        if (targetLayer) {
+                            bScore += targetLayer.indexOf(target);
+                            bCount++;
+                        }
+                    }
+                    for (const source of incoming.get(b) || []) {
+                        const sourceLayer = layers.get(ranks.get(source));
+                        if (sourceLayer) {
+                            bScore += sourceLayer.indexOf(source);
+                            bCount++;
+                        }
+                    }
                     
-                    const neighbors = Array.from(adjacency.get(key) || []);
-                    neighbors.sort((a, b) => {
-                        const aConns = adjacency.get(a)?.size || 0;
-                        const bConns = adjacency.get(b)?.size || 0;
-                        return bConns - aConns;
+                    const aAvg = aCount > 0 ? aScore / aCount : 0;
+                    const bAvg = bCount > 0 ? bScore / bCount : 0;
+                    return aAvg - bAvg;
+                });
+            }
+
+            for (let iter = 0; iter < 5; iter++) {
+                for (let rank = 0; rank <= maxRank; rank++) {
+                    const layer = layers.get(rank) || [];
+                    layer.sort((a, b) => {
+                        let aPos = 0, bPos = 0, aCount = 0, bCount = 0;
+                        
+                        for (const n of [...(outgoing.get(a) || []), ...(incoming.get(a) || [])]) {
+                            const nRank = ranks.get(n);
+                            const nLayer = layers.get(nRank);
+                            if (nLayer) {
+                                aPos += nLayer.indexOf(n);
+                                aCount++;
+                            }
+                        }
+                        for (const n of [...(outgoing.get(b) || []), ...(incoming.get(b) || [])]) {
+                            const nRank = ranks.get(n);
+                            const nLayer = layers.get(nRank);
+                            if (nLayer) {
+                                bPos += nLayer.indexOf(n);
+                                bCount++;
+                            }
+                        }
+                        
+                        return (aCount > 0 ? aPos / aCount : 0) - (bCount > 0 ? bPos / bCount : 0);
                     });
-
-                    const pos = positions.get(key);
-                    const directions = [
-                        { dx: spacingX, dy: 0 },
-                        { dx: -spacingX, dy: 0 },
-                        { dx: 0, dy: spacingY },
-                        { dx: 0, dy: -spacingY },
-                        { dx: spacingX, dy: spacingY },
-                        { dx: -spacingX, dy: spacingY },
-                        { dx: spacingX, dy: -spacingY },
-                        { dx: -spacingX, dy: -spacingY },
-                    ];
-
-                    let dirIndex = 0;
-                    for (const nKey of neighbors) {
-                        if (visited.has(nKey)) continue;
-                        const neighbor = entities.find(e => e.name.toLowerCase() === nKey);
-                        if (!neighbor) continue;
-
-                        const dir = directions[dirIndex % directions.length];
-                        queue.push({
-                            entity: neighbor,
-                            x: pos.x + dir.dx,
-                            y: pos.y + dir.dy
-                        });
-                        dirIndex++;
-                    }
                 }
             }
 
-            let clusterX = PADDING;
-            let clusterY = PADDING;
-
-            for (const entity of sorted) {
-                const key = entity.name.toLowerCase();
-                if (visited.has(key)) continue;
-
-                bfsPlace(entity, clusterX, clusterY);
-
-                let maxX = 0;
-                for (const pos of placed.values()) {
-                    maxX = Math.max(maxX, pos.x + pos.w);
+            const columnHeights = new Map();
+            
+            for (let rank = 0; rank <= maxRank; rank++) {
+                const layer = layers.get(rank) || [];
+                let y = PADDING;
+                const x = PADDING + rank * (COLUMN_WIDTH + COLUMN_SPACING);
+                
+                for (const key of layer) {
+                    const dim = dimensions.get(key);
+                    if (!dim) continue;
+                    
+                    const snappedX = snapToGrid(x);
+                    const snappedY = snapToGrid(y);
+                    
+                    positions.set(key, {
+                        x: snappedX,
+                        y: snappedY,
+                        w: dim.w,
+                        h: dim.h
+                    });
+                    
+                    y += dim.h + ROW_SPACING;
                 }
-                clusterX = maxX + spacingX;
-
-                if (clusterX > spacingX * 4) {
-                    clusterX = PADDING;
-                    let maxY = 0;
-                    for (const pos of placed.values()) {
-                        maxY = Math.max(maxY, pos.y + pos.h);
-                    }
-                    clusterY = maxY + spacingY;
-                }
+                
+                columnHeights.set(rank, y);
             }
 
-            for (let i = 0; i < 30; i++) {
-                optimizeLayout();
+            for (let iter = 0; iter < 3; iter++) {
+                for (let rank = 0; rank <= maxRank; rank++) {
+                    const layer = layers.get(rank) || [];
+                    
+                    for (const key of layer) {
+                        const pos = positions.get(key);
+                        if (!pos) continue;
+                        
+                        const neighbors = [...(outgoing.get(key) || []), ...(incoming.get(key) || [])];
+                        if (neighbors.length === 0) continue;
+                        
+                        let targetY = 0;
+                        let count = 0;
+                        for (const n of neighbors) {
+                            const nPos = positions.get(n);
+                            if (nPos) {
+                                targetY += nPos.y + nPos.h / 2;
+                                count++;
+                            }
+                        }
+                        
+                        if (count > 0) {
+                            const avgY = targetY / count - pos.h / 2;
+                            const newY = snapToGrid(pos.y + (avgY - pos.y) * 0.3);
+                            
+                            let canMove = true;
+                            for (const otherKey of layer) {
+                                if (otherKey === key) continue;
+                                const otherPos = positions.get(otherKey);
+                                if (otherPos) {
+                                    if (newY < otherPos.y + otherPos.h + ROW_SPACING &&
+                                        newY + pos.h + ROW_SPACING > otherPos.y) {
+                                        canMove = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (canMove && newY >= PADDING) {
+                                pos.y = newY;
+                            }
+                        }
+                    }
+                }
             }
 
             for (const [key, pos] of positions.entries()) {
@@ -663,91 +775,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
-        function optimizeLayout() {
-            const keys = Array.from(positions.keys());
-            
-            for (const key of keys) {
-                const pos = positions.get(key);
-                const neighbors = adjacency.get(key) || new Set();
-                
-                if (neighbors.size === 0) continue;
-
-                let targetX = 0;
-                let targetY = 0;
-                let count = 0;
-
-                for (const nKey of neighbors) {
-                    const nPos = positions.get(nKey);
-                    if (nPos) {
-                        targetX += nPos.x;
-                        targetY += nPos.y;
-                        count++;
-                    }
-                }
-
-                if (count > 0) {
-                    targetX /= count;
-                    targetY /= count;
-
-                    const moveX = (targetX - pos.x) * 0.1;
-                    const moveY = (targetY - pos.y) * 0.1;
-
-                    const newX = snapToGrid(pos.x + moveX);
-                    const newY = snapToGrid(pos.y + moveY);
-
-                    if (!hasOverlapAt(key, newX, newY, pos.w, pos.h)) {
-                        pos.x = Math.max(PADDING, newX);
-                        pos.y = Math.max(PADDING, newY);
-                    }
-                }
-            }
-
-            for (const key1 of keys) {
-                const pos1 = positions.get(key1);
-                for (const key2 of keys) {
-                    if (key1 >= key2) continue;
-                    const pos2 = positions.get(key2);
-
-                    const margin = 40;
-                    const overlapX = (pos1.x + pos1.w + margin) - pos2.x;
-                    const overlapY = (pos1.y + pos1.h + margin) - pos2.y;
-
-                    if (overlapX > 0 && pos2.x < pos1.x + pos1.w + margin && 
-                        pos1.y < pos2.y + pos2.h && pos2.y < pos1.y + pos1.h) {
-                        const push = overlapX / 2 + 10;
-                        pos1.x = snapToGrid(pos1.x - push);
-                        pos2.x = snapToGrid(pos2.x + push);
-                    }
-                    if (overlapY > 0 && pos2.y < pos1.y + pos1.h + margin &&
-                        pos1.x < pos2.x + pos2.w && pos2.x < pos1.x + pos1.w) {
-                        const push = overlapY / 2 + 10;
-                        pos1.y = snapToGrid(pos1.y - push);
-                        pos2.y = snapToGrid(pos2.y + push);
-                    }
-
-                    pos1.x = Math.max(PADDING, pos1.x);
-                    pos1.y = Math.max(PADDING, pos1.y);
-                    pos2.x = Math.max(PADDING, pos2.x);
-                    pos2.y = Math.max(PADDING, pos2.y);
-                }
-            }
-        }
-
-        function hasOverlapAt(key, x, y, w, h) {
-            const margin = 40;
-            for (const [k, pos] of positions.entries()) {
-                if (k === key) continue;
-                if (x < pos.x + pos.w + margin && x + w + margin > pos.x &&
-                    y < pos.y + pos.h + margin && y + h + margin > pos.y) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         function resetLayout() {
             positions.clear();
-            layoutTablesForceDirected();
+            layoutTablesHierarchical();
             drawRelations();
             fitToView();
         }
