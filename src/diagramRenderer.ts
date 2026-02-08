@@ -374,7 +374,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             </div>
         </div>
         <div class="toolbar-controls">
-            <button id="btn-reset" title="Reset layout">↻</button>
+            <button id="btn-auto" title="Auto layout">Auto</button>
             <button id="btn-fit">Fit</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
@@ -521,14 +521,16 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
-        function layoutTablesHierarchical() {
-            const entities = data.entities;
+        function layoutTablesHierarchical(allowedKeys) {
+            const allowedSet = allowedKeys ? new Set(allowedKeys) : null;
+            const entities = allowedSet
+                ? data.entities.filter(e => allowedSet.has(e.name.toLowerCase()))
+                : data.entities;
             const count = entities.length;
             if (count === 0) return;
 
-            const COLUMN_WIDTH = 380;
             const ROW_SPACING = 40;
-            const COLUMN_SPACING = 80;
+            const COLUMN_GAP = 40;
 
             const parents = new Map();
             const children = new Map();
@@ -542,6 +544,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             for (const r of data.relations) {
                 const child = r.from.toLowerCase();
                 const parent = r.to.toLowerCase();
+                if (allowedSet && (!allowedSet.has(child) || !allowedSet.has(parent))) {
+                    continue;
+                }
                 if (parents.has(child) && children.has(parent)) {
                     parents.get(child).add(parent);
                     children.get(parent).add(child);
@@ -582,6 +587,26 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     layers.set(rank, []);
                 }
                 layers.get(rank).push(key);
+            }
+
+            const columnWidths = new Map();
+            for (let rank = 0; rank <= maxRank; rank++) {
+                const layer = layers.get(rank) || [];
+                let maxWidth = 0;
+                for (const key of layer) {
+                    const dim = dimensions.get(key);
+                    if (dim) {
+                        maxWidth = Math.max(maxWidth, dim.w);
+                    }
+                }
+                columnWidths.set(rank, maxWidth || 220);
+            }
+
+            const columnX = new Map();
+            let xCursor = PADDING;
+            for (let rank = 0; rank <= maxRank; rank++) {
+                columnX.set(rank, xCursor);
+                xCursor += (columnWidths.get(rank) || 220) + COLUMN_GAP;
             }
 
             const getLayerIndex = (key) => {
@@ -631,7 +656,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             for (let rank = 0; rank <= maxRank; rank++) {
                 const layer = layers.get(rank) || [];
                 let y = PADDING;
-                const x = PADDING + rank * (COLUMN_WIDTH + COLUMN_SPACING);
+                const x = columnX.get(rank) || PADDING;
 
                 for (const key of layer) {
                     const dim = dimensions.get(key);
@@ -683,7 +708,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     layer.sort((a, b) => (targetY.get(a) || 0) - (targetY.get(b) || 0));
 
                     let y = PADDING;
-                    const x = PADDING + rank * (COLUMN_WIDTH + COLUMN_SPACING);
+                    const x = columnX.get(rank) || PADDING;
                     for (const key of layer) {
                         const dim = dimensions.get(key);
                         if (!dim) continue;
@@ -708,9 +733,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
-        function resetLayout() {
-            positions.clear();
-            layoutTablesHierarchical();
+        function autoLayout() {
+            const visibleKeys = Array.from(visibility.entries())
+                .filter(([, visible]) => visible)
+                .map(([key]) => key);
+            layoutTablesHierarchical(visibleKeys);
             drawRelations();
             fitToView();
         }
@@ -970,7 +997,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.getElementById('btn-fit').addEventListener('click', fitToView);
-            document.getElementById('btn-reset').addEventListener('click', resetLayout);
+            document.getElementById('btn-auto').addEventListener('click', autoLayout);
 
             document.getElementById('btn-toggle-drawer').addEventListener('click', () => {
                 drawer.classList.toggle('collapsed');
