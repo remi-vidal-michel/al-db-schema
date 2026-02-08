@@ -375,7 +375,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         </div>
         <div class="toolbar-controls">
             <button id="btn-auto" title="Auto layout">Auto</button>
-            <button id="btn-fit">Fit</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
             <button id="btn-zoom-in">+</button>
@@ -1036,7 +1035,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 zoom(-0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
             });
 
-            document.getElementById('btn-fit').addEventListener('click', fitToView);
             document.getElementById('btn-auto').addEventListener('click', autoLayout);
 
             document.getElementById('btn-toggle-drawer').addEventListener('click', () => {
