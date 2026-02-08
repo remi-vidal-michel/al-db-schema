@@ -531,6 +531,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
             const ROW_SPACING = 40;
             const COLUMN_GAP = 40;
+            const MAX_TABLES_PER_COLUMN = 4;
 
             const parents = new Map();
             const children = new Map();
@@ -555,21 +556,38 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
             const ranks = new Map();
             for (const e of entities) {
-                ranks.set(e.name.toLowerCase(), 0);
+                ranks.set(e.name.toLowerCase(), Number.POSITIVE_INFINITY);
             }
 
-            for (let iter = 0; iter < entities.length; iter++) {
-                let changed = false;
-                for (const [child, parentSet] of parents.entries()) {
-                    for (const parent of parentSet) {
-                        const nextRank = (ranks.get(parent) || 0) + 1;
-                        if (nextRank > (ranks.get(child) || 0)) {
-                            ranks.set(child, nextRank);
-                            changed = true;
-                        }
+            const queue = [];
+            for (const [key, parentSet] of parents.entries()) {
+                if (parentSet.size === 0) {
+                    ranks.set(key, 0);
+                    queue.push(key);
+                }
+            }
+
+            if (queue.length === 0 && entities.length > 0) {
+                const seed = entities[0].name.toLowerCase();
+                ranks.set(seed, 0);
+                queue.push(seed);
+            }
+
+            while (queue.length > 0) {
+                const current = queue.shift();
+                const currentRank = ranks.get(current) || 0;
+                for (const child of children.get(current) || []) {
+                    if ((ranks.get(child) || Number.POSITIVE_INFINITY) > currentRank + 1) {
+                        ranks.set(child, currentRank + 1);
+                        queue.push(child);
                     }
                 }
-                if (!changed) break;
+            }
+
+            for (const [key, rank] of ranks.entries()) {
+                if (!Number.isFinite(rank)) {
+                    ranks.set(key, 0);
+                }
             }
 
             const uniqueRanks = Array.from(new Set(ranks.values())).sort((a, b) => a - b);
@@ -587,6 +605,28 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     layers.set(rank, []);
                 }
                 layers.get(rank).push(key);
+            }
+
+            const tablesPerRank = new Map();
+            for (const [rank, tables] of layers.entries()) {
+                tablesPerRank.set(rank, tables.length);
+            }
+
+            for (const [rank, tables] of layers.entries()) {
+                if (tables.length > MAX_TABLES_PER_COLUMN) {
+                    const splitPoint = Math.ceil(tables.length / 2);
+                    const newRank = maxRank + 1;
+                    
+                    for (let i = splitPoint; i < tables.length; i++) {
+                        ranks.set(tables[i], newRank);
+                    }
+                    
+                    if (!layers.has(newRank)) {
+                        layers.set(newRank, []);
+                    }
+                    layers.get(newRank).push(...tables.splice(splitPoint));
+                    maxRank = newRank;
+                }
             }
 
             const columnWidths = new Map();
