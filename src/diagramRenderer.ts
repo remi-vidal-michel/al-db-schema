@@ -104,6 +104,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --drawer-bg: #1e1e1e;
             --drawer-border: #3c3c3c;
             --drawer-item-hover: #2a2d2e;
+            --dot-color: rgba(255, 255, 255, 0.15);
         }
         body.vscode-dark {
             --table-bg: #2d3748;
@@ -111,11 +112,13 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --field-text: #e2e8f0;
             --type-text: #a0aec0;
             --row-alt: #1a202c;
+            --dot-color: rgba(255, 255, 255, 0.1);
         }
         body.vscode-light {
             --drawer-bg: #f3f3f3;
             --drawer-border: #d4d4d4;
             --drawer-item-hover: #e8e8e8;
+            --dot-color: rgba(0, 0, 0, 0.1);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -202,30 +205,18 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             padding: 12px;
             border-bottom: 1px solid var(--drawer-border);
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 8px;
+        }
+        .drawer-header input[type="checkbox"] {
+            cursor: pointer;
         }
         .drawer-header h2 {
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
             opacity: 0.8;
-        }
-        .drawer-actions {
-            display: flex;
-            gap: 4px;
-        }
-        .drawer-actions button {
-            background: transparent;
-            border: none;
-            color: var(--vscode-editor-foreground, #e2e8f0);
-            cursor: pointer;
-            padding: 2px 6px;
-            font-size: 10px;
-            opacity: 0.7;
-        }
-        .drawer-actions button:hover {
-            opacity: 1;
+            flex: 1;
         }
         .drawer-list {
             flex: 1;
@@ -261,6 +252,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             position: relative;
             overflow: hidden;
             cursor: grab;
+            background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+            background-size: 20px 20px;
         }
         .canvas-container.dragging {
             cursor: grabbing;
@@ -381,6 +374,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             </div>
         </div>
         <div class="toolbar-controls">
+            <button id="btn-reset" title="Reset layout">↻</button>
             <button id="btn-fit">Fit</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
@@ -390,11 +384,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     <div class="main-container">
         <div class="drawer" id="drawer">
             <div class="drawer-header">
+                <input type="checkbox" id="toggle-all-checkbox" checked />
                 <h2>Tables</h2>
-                <div class="drawer-actions">
-                    <button id="btn-show-all">All</button>
-                    <button id="btn-hide-all">None</button>
-                </div>
             </div>
             <div class="drawer-list" id="drawer-list"></div>
         </div>
@@ -409,6 +400,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         const zoomLabel = document.getElementById('zoom-label');
         const drawer = document.getElementById('drawer');
         const drawerList = document.getElementById('drawer-list');
+        const toggleAllCheckbox = document.getElementById('toggle-all-checkbox');
 
         let scale = 1;
         let panX = 0;
@@ -418,28 +410,45 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         let lastY = 0;
 
         let draggingCard = null;
-        let cardStartX = 0;
-        let cardStartY = 0;
         let cardOffsetX = 0;
         let cardOffsetY = 0;
 
-        const PADDING = 40;
-        const GAP_X = 80;
-        const GAP_Y = 60;
+        const GRID_SIZE = 20;
+        const PADDING = 60;
 
         const positions = new Map();
         const dimensions = new Map();
         const visibility = new Map();
         const boxElements = new Map();
+        const adjacency = new Map();
         let svgLayer = null;
 
+        function snapToGrid(value) {
+            return Math.round(value / GRID_SIZE) * GRID_SIZE;
+        }
+
         function init() {
+            buildAdjacency();
             buildDrawer();
             createTableBoxes();
-            layoutTables();
+            layoutTablesForceDirected();
             drawRelations();
             fitToView();
             setupEventListeners();
+        }
+
+        function buildAdjacency() {
+            for (const e of data.entities) {
+                adjacency.set(e.name.toLowerCase(), new Set());
+            }
+            for (const r of data.relations) {
+                const fromKey = r.from.toLowerCase();
+                const toKey = r.to.toLowerCase();
+                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
+                    adjacency.get(fromKey).add(toKey);
+                    adjacency.get(toKey).add(fromKey);
+                }
+            }
         }
 
         function buildDrawer() {
@@ -460,6 +469,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 checkbox.addEventListener('change', () => {
                     toggleTableVisibility(entity.name.toLowerCase(), checkbox.checked);
                     item.classList.toggle('hidden-table', !checkbox.checked);
+                    updateToggleAllCheckbox();
                 });
                 
                 const label = document.createElement('span');
@@ -473,56 +483,13 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
+        function updateToggleAllCheckbox() {
+            const allVisible = Array.from(visibility.values()).every(v => v);
+            toggleAllCheckbox.checked = allVisible;
+        }
+
         function createTableBoxes() {
-            const adjacency = new Map();
-            for (const e of data.entities) {
-                adjacency.set(e.name.toLowerCase(), new Set());
-            }
-            for (const r of data.relations) {
-                const fromKey = r.from.toLowerCase();
-                const toKey = r.to.toLowerCase();
-                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
-                    adjacency.get(fromKey).add(toKey);
-                    adjacency.get(toKey).add(fromKey);
-                }
-            }
-
-            const sorted = [...data.entities].sort((a, b) => {
-                const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
-                const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
-                return bConns - aConns;
-            });
-
-            const visited = new Set();
-            const ordered = [];
-            const queue = [];
-
-            for (const e of sorted) {
-                if (visited.has(e.name.toLowerCase())) continue;
-                queue.push(e);
-                while (queue.length > 0) {
-                    const curr = queue.shift();
-                    const key = curr.name.toLowerCase();
-                    if (visited.has(key)) continue;
-                    visited.add(key);
-                    ordered.push(curr);
-                    const neighbors = adjacency.get(key) || new Set();
-                    for (const nKey of neighbors) {
-                        if (!visited.has(nKey)) {
-                            const neighbor = data.entities.find(e => e.name.toLowerCase() === nKey);
-                            if (neighbor) queue.push(neighbor);
-                        }
-                    }
-                }
-            }
-
-            for (const e of data.entities) {
-                if (!visited.has(e.name.toLowerCase())) {
-                    ordered.push(e);
-                }
-            }
-
-            for (const entity of ordered) {
+            for (const entity of data.entities) {
                 const box = document.createElement('div');
                 box.className = 'table-box';
                 box.dataset.entity = entity.name.toLowerCase();
@@ -552,45 +519,75 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     entity
                 });
             }
-            
-            return ordered;
         }
 
-        function layoutTables() {
-            const ordered = [];
-            const adjacency = new Map();
-            
-            for (const e of data.entities) {
-                adjacency.set(e.name.toLowerCase(), new Set());
-            }
-            for (const r of data.relations) {
-                const fromKey = r.from.toLowerCase();
-                const toKey = r.to.toLowerCase();
-                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
-                    adjacency.get(fromKey).add(toKey);
-                    adjacency.get(toKey).add(fromKey);
-                }
-            }
+        function layoutTablesForceDirected() {
+            const entities = data.entities;
+            const count = entities.length;
+            if (count === 0) return;
 
-            const sorted = [...data.entities].sort((a, b) => {
+            const cols = Math.max(2, Math.ceil(Math.sqrt(count * 1.5)));
+            const avgWidth = 260;
+            const avgHeight = 180;
+            const spacingX = avgWidth + 100;
+            const spacingY = avgHeight + 80;
+
+            const sorted = [...entities].sort((a, b) => {
                 const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
                 const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
-                if (bConns !== aConns) return bConns - aConns;
-                return a.displayName.localeCompare(b.displayName);
+                return bConns - aConns;
             });
 
+            const placed = new Map();
             const visited = new Set();
-            const queue = [];
 
-            for (const e of sorted) {
-                if (visited.has(e.name.toLowerCase())) continue;
-                queue.push(e);
+            function placeEntity(entity, targetX, targetY) {
+                const key = entity.name.toLowerCase();
+                const dim = dimensions.get(key);
+                if (!dim) return;
+
+                let x = snapToGrid(targetX);
+                let y = snapToGrid(targetY);
+
+                let attempts = 0;
+                while (hasOverlap(key, x, y, dim.w, dim.h) && attempts < 50) {
+                    const angle = (attempts * 137.5) * Math.PI / 180;
+                    const radius = 40 + attempts * 20;
+                    x = snapToGrid(targetX + Math.cos(angle) * radius);
+                    y = snapToGrid(targetY + Math.sin(angle) * radius);
+                    attempts++;
+                }
+
+                x = Math.max(PADDING, x);
+                y = Math.max(PADDING, y);
+
+                positions.set(key, { x, y, w: dim.w, h: dim.h });
+                placed.set(key, { x, y, w: dim.w, h: dim.h });
+            }
+
+            function hasOverlap(key, x, y, w, h) {
+                const margin = 40;
+                for (const [k, pos] of placed.entries()) {
+                    if (k === key) continue;
+                    if (x < pos.x + pos.w + margin && x + w + margin > pos.x &&
+                        y < pos.y + pos.h + margin && y + h + margin > pos.y) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            function bfsPlace(startEntity, startX, startY) {
+                const queue = [{ entity: startEntity, x: startX, y: startY }];
+                
                 while (queue.length > 0) {
-                    const curr = queue.shift();
-                    const key = curr.name.toLowerCase();
+                    const { entity, x, y } = queue.shift();
+                    const key = entity.name.toLowerCase();
+                    
                     if (visited.has(key)) continue;
                     visited.add(key);
-                    ordered.push(curr);
+                    
+                    placeEntity(entity, x, y);
                     
                     const neighbors = Array.from(adjacency.get(key) || []);
                     neighbors.sort((a, b) => {
@@ -598,64 +595,161 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                         const bConns = adjacency.get(b)?.size || 0;
                         return bConns - aConns;
                     });
-                    
+
+                    const pos = positions.get(key);
+                    const directions = [
+                        { dx: spacingX, dy: 0 },
+                        { dx: -spacingX, dy: 0 },
+                        { dx: 0, dy: spacingY },
+                        { dx: 0, dy: -spacingY },
+                        { dx: spacingX, dy: spacingY },
+                        { dx: -spacingX, dy: spacingY },
+                        { dx: spacingX, dy: -spacingY },
+                        { dx: -spacingX, dy: -spacingY },
+                    ];
+
+                    let dirIndex = 0;
                     for (const nKey of neighbors) {
-                        if (!visited.has(nKey)) {
-                            const neighbor = data.entities.find(e => e.name.toLowerCase() === nKey);
-                            if (neighbor) queue.push(neighbor);
-                        }
+                        if (visited.has(nKey)) continue;
+                        const neighbor = entities.find(e => e.name.toLowerCase() === nKey);
+                        if (!neighbor) continue;
+
+                        const dir = directions[dirIndex % directions.length];
+                        queue.push({
+                            entity: neighbor,
+                            x: pos.x + dir.dx,
+                            y: pos.y + dir.dy
+                        });
+                        dirIndex++;
                     }
                 }
             }
 
-            for (const e of data.entities) {
-                if (!visited.has(e.name.toLowerCase())) {
-                    ordered.push(e);
+            let clusterX = PADDING;
+            let clusterY = PADDING;
+
+            for (const entity of sorted) {
+                const key = entity.name.toLowerCase();
+                if (visited.has(key)) continue;
+
+                bfsPlace(entity, clusterX, clusterY);
+
+                let maxX = 0;
+                for (const pos of placed.values()) {
+                    maxX = Math.max(maxX, pos.x + pos.w);
+                }
+                clusterX = maxX + spacingX;
+
+                if (clusterX > spacingX * 4) {
+                    clusterX = PADDING;
+                    let maxY = 0;
+                    for (const pos of placed.values()) {
+                        maxY = Math.max(maxY, pos.y + pos.h);
+                    }
+                    clusterY = maxY + spacingY;
                 }
             }
 
-            const count = ordered.length;
-            if (count === 0) return;
-
-            const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.2)));
-            const colWidths = [];
-            const rowHeights = [];
-
-            for (let i = 0; i < ordered.length; i++) {
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                const dim = dimensions.get(ordered[i].name.toLowerCase());
-                if (!dim) continue;
-                colWidths[col] = Math.max(colWidths[col] || 0, dim.w);
-                rowHeights[row] = Math.max(rowHeights[row] || 0, dim.h);
+            for (let i = 0; i < 30; i++) {
+                optimizeLayout();
             }
 
-            for (let i = 0; i < ordered.length; i++) {
-                const entity = ordered[i];
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                const dim = dimensions.get(entity.name.toLowerCase());
-                if (!dim) continue;
-
-                let x = PADDING;
-                for (let c = 0; c < col; c++) {
-                    x += (colWidths[c] || 0) + GAP_X;
-                }
-                x += ((colWidths[col] || 0) - dim.w) / 2;
-
-                let y = PADDING;
-                for (let r = 0; r < row; r++) {
-                    y += (rowHeights[r] || 0) + GAP_Y;
-                }
-
-                positions.set(entity.name.toLowerCase(), { x, y, w: dim.w, h: dim.h });
-                
-                const box = boxElements.get(entity.name.toLowerCase());
+            for (const [key, pos] of positions.entries()) {
+                const box = boxElements.get(key);
                 if (box) {
-                    box.style.left = x + 'px';
-                    box.style.top = y + 'px';
+                    box.style.left = pos.x + 'px';
+                    box.style.top = pos.y + 'px';
                 }
             }
+        }
+
+        function optimizeLayout() {
+            const keys = Array.from(positions.keys());
+            
+            for (const key of keys) {
+                const pos = positions.get(key);
+                const neighbors = adjacency.get(key) || new Set();
+                
+                if (neighbors.size === 0) continue;
+
+                let targetX = 0;
+                let targetY = 0;
+                let count = 0;
+
+                for (const nKey of neighbors) {
+                    const nPos = positions.get(nKey);
+                    if (nPos) {
+                        targetX += nPos.x;
+                        targetY += nPos.y;
+                        count++;
+                    }
+                }
+
+                if (count > 0) {
+                    targetX /= count;
+                    targetY /= count;
+
+                    const moveX = (targetX - pos.x) * 0.1;
+                    const moveY = (targetY - pos.y) * 0.1;
+
+                    const newX = snapToGrid(pos.x + moveX);
+                    const newY = snapToGrid(pos.y + moveY);
+
+                    if (!hasOverlapAt(key, newX, newY, pos.w, pos.h)) {
+                        pos.x = Math.max(PADDING, newX);
+                        pos.y = Math.max(PADDING, newY);
+                    }
+                }
+            }
+
+            for (const key1 of keys) {
+                const pos1 = positions.get(key1);
+                for (const key2 of keys) {
+                    if (key1 >= key2) continue;
+                    const pos2 = positions.get(key2);
+
+                    const margin = 40;
+                    const overlapX = (pos1.x + pos1.w + margin) - pos2.x;
+                    const overlapY = (pos1.y + pos1.h + margin) - pos2.y;
+
+                    if (overlapX > 0 && pos2.x < pos1.x + pos1.w + margin && 
+                        pos1.y < pos2.y + pos2.h && pos2.y < pos1.y + pos1.h) {
+                        const push = overlapX / 2 + 10;
+                        pos1.x = snapToGrid(pos1.x - push);
+                        pos2.x = snapToGrid(pos2.x + push);
+                    }
+                    if (overlapY > 0 && pos2.y < pos1.y + pos1.h + margin &&
+                        pos1.x < pos2.x + pos2.w && pos2.x < pos1.x + pos1.w) {
+                        const push = overlapY / 2 + 10;
+                        pos1.y = snapToGrid(pos1.y - push);
+                        pos2.y = snapToGrid(pos2.y + push);
+                    }
+
+                    pos1.x = Math.max(PADDING, pos1.x);
+                    pos1.y = Math.max(PADDING, pos1.y);
+                    pos2.x = Math.max(PADDING, pos2.x);
+                    pos2.y = Math.max(PADDING, pos2.y);
+                }
+            }
+        }
+
+        function hasOverlapAt(key, x, y, w, h) {
+            const margin = 40;
+            for (const [k, pos] of positions.entries()) {
+                if (k === key) continue;
+                if (x < pos.x + pos.w + margin && x + w + margin > pos.x &&
+                    y < pos.y + pos.h + margin && y + h + margin > pos.y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function resetLayout() {
+            positions.clear();
+            layoutTablesForceDirected();
+            drawRelations();
+            fitToView();
         }
 
         function drawRelations() {
@@ -760,29 +854,22 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             drawRelations();
         }
 
-        function showAllTables() {
+        function toggleAll() {
+            const allVisible = Array.from(visibility.values()).every(v => v);
+            const newState = !allVisible;
+            
             for (const key of visibility.keys()) {
-                visibility.set(key, true);
+                visibility.set(key, newState);
                 const box = boxElements.get(key);
-                if (box) box.classList.remove('hidden');
+                if (box) box.classList.toggle('hidden', !newState);
             }
+            
             drawerList.querySelectorAll('.drawer-item').forEach(item => {
-                item.classList.remove('hidden-table');
-                item.querySelector('input').checked = true;
+                item.classList.toggle('hidden-table', !newState);
+                item.querySelector('input').checked = newState;
             });
-            drawRelations();
-        }
-
-        function hideAllTables() {
-            for (const key of visibility.keys()) {
-                visibility.set(key, false);
-                const box = boxElements.get(key);
-                if (box) box.classList.add('hidden');
-            }
-            drawerList.querySelectorAll('.drawer-item').forEach(item => {
-                item.classList.add('hidden-table');
-                item.querySelector('input').checked = false;
-            });
+            
+            toggleAllCheckbox.checked = newState;
             drawRelations();
         }
 
@@ -794,8 +881,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             const box = boxElements.get(entityKey);
             const pos = positions.get(entityKey);
             
-            cardStartX = pos.x;
-            cardStartY = pos.y;
             cardOffsetX = (e.clientX - container.getBoundingClientRect().left - panX) / scale - pos.x;
             cardOffsetY = (e.clientY - container.getBoundingClientRect().top - panY) / scale - pos.y;
             
@@ -811,8 +896,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             const y = (e.clientY - rect.top - panY) / scale - cardOffsetY;
             
             const pos = positions.get(draggingCard);
-            pos.x = Math.max(0, x);
-            pos.y = Math.max(0, y);
+            pos.x = Math.max(PADDING, snapToGrid(x));
+            pos.y = Math.max(PADDING, snapToGrid(y));
             
             const box = boxElements.get(draggingCard);
             box.style.left = pos.x + 'px';
@@ -922,13 +1007,13 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.getElementById('btn-fit').addEventListener('click', fitToView);
+            document.getElementById('btn-reset').addEventListener('click', resetLayout);
 
             document.getElementById('btn-toggle-drawer').addEventListener('click', () => {
                 drawer.classList.toggle('collapsed');
             });
 
-            document.getElementById('btn-show-all').addEventListener('click', showAllTables);
-            document.getElementById('btn-hide-all').addEventListener('click', hideAllTables);
+            toggleAllCheckbox.addEventListener('change', toggleAll);
         }
 
         function escapeHtml(str) {
