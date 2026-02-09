@@ -106,6 +106,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --drawer-border: #3c3c3c;
             --drawer-item-hover: #2a2d2e;
             --dot-color: rgba(255, 255, 255, 0.15);
+            --drawer-width: 250px;
         }
         body.vscode-dark {
             --table-bg: #2d3748;
@@ -223,16 +224,35 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             overflow: hidden;
         }
         .drawer {
-            width: 250px;
+            width: var(--drawer-width);
+            min-width: 200px;
+            max-width: 500px;
             background: var(--drawer-bg);
             border-right: 1px solid var(--drawer-border);
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
             transition: margin-left 0.2s ease;
+            position: relative;
         }
         .drawer.collapsed {
-            margin-left: -250px;
+            margin-left: calc(-1 * var(--drawer-width));
+        }
+        .drawer-resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 10;
+        }
+        .drawer-resizer:hover {
+            background: var(--vscode-focusBorder, #007acc);
+        }
+        .drawer.resizing .drawer-resizer {
+            background: var(--vscode-focusBorder, #007acc);
         }
         .drawer-header {
             padding: 12px;
@@ -440,6 +460,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     </div>
     <div class="main-container">
         <div class="drawer" id="drawer">
+            <div class="drawer-resizer" id="drawer-resizer"></div>
             <div class="drawer-header">
                 <input type="checkbox" id="toggle-all-checkbox" checked />
                 <h2>Tables</h2>
@@ -458,6 +479,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         const drawer = document.getElementById('drawer');
         const drawerList = document.getElementById('drawer-list');
         const toggleAllCheckbox = document.getElementById('toggle-all-checkbox');
+        const drawerResizer = document.getElementById('drawer-resizer');
 
         let scale = 1;
         let panX = 0;
@@ -470,8 +492,13 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         let cardOffsetX = 0;
         let cardOffsetY = 0;
 
+        let isResizingDrawer = false;
+        let drawerWidth = 250;
+
         const GRID_SIZE = 20;
         const PADDING = 60;
+        const MIN_DRAWER_WIDTH = 200;
+        const MAX_DRAWER_WIDTH = 500;
 
         const positions = new Map();
         const dimensions = new Map();
@@ -483,6 +510,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
         function snapToGrid(value) {
             return Math.round(value / GRID_SIZE) * GRID_SIZE;
+        }
+
+        function setDrawerWidth(width) {
+            drawerWidth = Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, width));
+            document.documentElement.style.setProperty('--drawer-width', drawerWidth + 'px');
         }
 
         function init() {
@@ -568,7 +600,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     }
                     e.preventDefault();
                     e.stopPropagation();
-                    toggleConnectedTables(entity.name.toLowerCase());
+                    toggleConnectedTablesAndLayout(entity.name.toLowerCase());
                 });
                 
                 viewport.appendChild(box);
@@ -670,7 +702,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
-        function toggleConnectedTables(entityKey) {
+        function toggleConnectedTablesAndLayout(entityKey) {
             const connected = new Set([entityKey]);
             const neighbors = adjacency.get(entityKey) || new Set();
             for (const n of neighbors) {
@@ -694,7 +726,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
 
             updateToggleAllCheckbox();
-            drawRelations();
+            autoLayout();
         }
 
         function layoutTablesHierarchical(allowedKeys) {
@@ -1166,6 +1198,12 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mousemove', (e) => {
+                if (isResizingDrawer) {
+                    const newWidth = e.clientX;
+                    setDrawerWidth(newWidth);
+                    return;
+                }
+
                 if (draggingCard) {
                     handleCardDrag(e);
                     return;
@@ -1179,11 +1217,21 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mouseup', () => {
+                if (isResizingDrawer) {
+                    isResizingDrawer = false;
+                    drawer.classList.remove('resizing');
+                }
                 if (draggingCard) {
                     endCardDrag();
                 }
                 isPanning = false;
                 container.classList.remove('dragging');
+            });
+
+            drawerResizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                isResizingDrawer = true;
+                drawer.classList.add('resizing');
             });
 
             document.getElementById('btn-zoom-in').addEventListener('click', () => {
