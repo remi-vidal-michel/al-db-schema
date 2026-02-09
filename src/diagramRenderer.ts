@@ -88,7 +88,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
+    
     <style>
         :root {
             --header-bg: linear-gradient(135deg, #2c5282 0%, #1a365d 100%);
@@ -353,8 +353,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             cursor: pointer;
             z-index: 5;
         }
-        .table-action i {
+        .table-action i,
+        .table-action .icon-chain {
             pointer-events: none;
+            width: 16px;
+            height: 16px;
         }
         .table-action:hover {
             background: rgba(0,0,0,0.55);
@@ -631,7 +634,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }).join('');
 
             box.innerHTML = \`
-                <button class="table-action" title="Show linked tables"><i class="fa fa-chain"></i></button>
+                <button class="table-action" title="Show linked tables"> 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1664 1664" class="icon-chain" fill="currentColor"><path d="M1456 1216q0-40-28-68l-208-208q-28-28-68-28q-42 0-72 32q3 3 19 18.5t21.5 21.5t15 19t13 25.5t3.5 27.5q0 40-28 68t-68 28q-15 0-27.5-3.5t-25.5-13t-19-15t-21.5-21.5t-18.5-19q-33 31-33 73q0 40 28 68l206 207q27 27 68 27q40 0 68-26l147-146q28-28 28-67M753 511q0-40-28-68L519 236q-28-28-68-28q-39 0-68 27L236 381q-28 28-28 67q0 40 28 68l208 208q27 27 68 27q42 0 72-31q-3-3-19-18.5T543.5 680t-15-19t-13-25.5T512 608q0-40 28-68t68-28q15 0 27.5 3.5t25.5 13t19 15t21.5 21.5t18.5 19q33-31 33-73m895 705q0 120-85 203l-147 146q-83 83-203 83q-121 0-204-85l-206-207q-83-83-83-203q0-123 88-209l-88-88q-86 88-208 88q-120 0-204-84L100 652q-84-84-84-204t85-203L248 99q83-83 203-83q121 0 204 85l206 207q83 83 83 203q0 123-88 209l88 88q86-88 208-88q120 0 204 84l208 208q84 84 84 204"/></svg>
+                </button>
                 <div class="table-header">\${displayName}</div>
                 <div class="table-body">
                     \${fieldsHtml}
