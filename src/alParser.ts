@@ -155,7 +155,10 @@ function parseKeyFields(raw: string): string[] {
     const regex = /"([^"]+)"|([^,]+)/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(raw)) !== null) {
-        const value = (match[1] ?? match[2] ?? "").trim();
+        let value = (match[1] ?? match[2] ?? "").trim();
+        if (value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length - 1).trim();
+        }
         if (value) {
             fields.push(value);
         }
