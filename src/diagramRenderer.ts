@@ -1,4 +1,4 @@
-import { AlProjectScanResult } from './types';
+import { AlProjectScanResult } from "./types";
 
 interface DiagramField {
     name: string;
@@ -22,23 +22,23 @@ interface DiagramRelation {
 }
 
 export function generateDiagramHtml(scanResult: AlProjectScanResult, title: string, subtitle: string): string {
-    const tables = scanResult.tables.filter(t => t.objectType === 'table');
-    const localTableNames = new Set(tables.map(t => t.name.toLowerCase()));
+    const tables = scanResult.tables.filter((t) => t.objectType === "table");
+    const localTableNames = new Set(tables.map((t) => t.name.toLowerCase()));
     const externalExtensions = scanResult.tables.filter(
-        t => t.objectType === 'tableextension' && !localTableNames.has((t.extendsTable || '').toLowerCase())
+        (t) => t.objectType === "tableextension" && !localTableNames.has((t.extendsTable || "").toLowerCase()),
     );
 
     const allEntities = [...tables, ...externalExtensions];
     const entityMap = new Map<string, DiagramEntity>();
 
     for (const table of allEntities) {
-        const entityName = table.objectType === 'tableextension' ? table.extendsTable || table.name : table.name;
+        const entityName = table.objectType === "tableextension" ? table.extendsTable || table.name : table.name;
         if (entityMap.has(entityName.toLowerCase())) {
             continue;
         }
 
         const displayName = table.caption || entityName;
-        const fields: DiagramField[] = table.fields.map(f => ({
+        const fields: DiagramField[] = table.fields.map((f) => ({
             name: f.name,
             displayName: f.caption || f.name,
             type: f.type,
@@ -71,7 +71,7 @@ export function generateDiagramHtml(scanResult: AlProjectScanResult, title: stri
             from: rel.fromTable,
             fromField: rel.fromField,
             to: rel.toTable,
-            toField: rel.toField || '',
+            toField: rel.toField || "",
         });
     }
 
@@ -1277,5 +1277,5 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 }
 
 function escapeHtml(str: string): string {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

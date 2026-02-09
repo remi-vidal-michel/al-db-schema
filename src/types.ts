@@ -21,7 +21,7 @@ export interface AlTable {
     id: number;
     name: string;
     caption: string;
-    objectType: 'table' | 'tableextension';
+    objectType: "table" | "tableextension";
     extendsTable: string;
     fields: AlField[];
     keys: AlKey[];
