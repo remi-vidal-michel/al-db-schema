@@ -88,6 +88,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
     <style>
         :root {
             --header-bg: linear-gradient(135deg, #2c5282 0%, #1a365d 100%);
@@ -183,6 +184,38 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             font-size: 11px;
             min-width: 45px;
             text-align: center;
+        }
+        #search-input {
+            background: var(--vscode-input-background, #3c3c3c);
+            color: var(--vscode-input-foreground, #cccccc);
+            border: 1px solid var(--vscode-input-border, #3c3c3c);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            width: 200px;
+            outline: none;
+        }
+        #search-input:focus {
+            border-color: var(--vscode-focusBorder, #007acc);
+        }
+        #search-input::placeholder {
+            color: var(--vscode-input-placeholderForeground, #888);
+        }
+        .highlight {
+            background-color: #ffd700;
+            color: #000;
+            font-weight: 600;
+            padding: 1px 2px;
+            border-radius: 2px;
+        }
+        .drawer-item.search-hit {
+            background: var(--drawer-item-hover);
+        }
+        .drawer-item.search-hit .drawer-item-label {
+            font-weight: 600;
+        }
+        .table-box.search-hit {
+            box-shadow: 0 0 0 2px #ffd700, 0 2px 8px rgba(0,0,0,0.15);
         }
         .main-container {
             flex: 1;
@@ -282,6 +315,30 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             cursor: move;
             user-select: none;
         }
+        .table-action {
+            position: absolute;
+            top: 5px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #3c3c3c;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            padding: 0;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 5;
+        }
+        .table-action i {
+            pointer-events: none;
+        }
+        .table-action:hover {
+            background: rgba(0,0,0,0.55);
+        }
         .table-box.dragging-card {
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
             z-index: 1000;
@@ -374,6 +431,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             </div>
         </div>
         <div class="toolbar-controls">
+            <input type="text" id="search-input" placeholder="Search tables & fields..." />
             <button id="btn-auto" title="Auto layout">Auto</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
@@ -421,6 +479,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         const boxElements = new Map();
         const adjacency = new Map();
         let svgLayer = null;
+        let searchTerm = '';
 
         function snapToGrid(value) {
             return Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -492,23 +551,25 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 const box = document.createElement('div');
                 box.className = 'table-box';
                 box.dataset.entity = entity.name.toLowerCase();
-                box.innerHTML = \`
-                    <div class="table-header">\${escapeHtml(entity.displayName)}</div>
-                    <div class="table-body">
-                        \${entity.fields.map(f => \`
-                            <div class="field-row">
-                                <div class="field-badges">
-                                    \${f.isPK ? '<span class="badge badge-pk">PK</span>' : ''}
-                                    \${f.isFK ? '<span class="badge badge-fk">FK</span>' : ''}
-                                </div>
-                                <span class="field-name">\${escapeHtml(f.displayName)}</span>
-                                <span class="field-type">\${escapeHtml(f.type)}</span>
-                            </div>
-                        \`).join('')}
-                    </div>
-                \`;
                 
-                box.addEventListener('mousedown', (e) => startCardDrag(e, entity.name.toLowerCase()));
+                renderTableBox(box, entity);
+
+                box.addEventListener('mousedown', (e) => {
+                    if (e.target.closest('.table-action')) {
+                        return;
+                    }
+                    startCardDrag(e, entity.name.toLowerCase());
+                });
+
+                box.addEventListener('click', (e) => {
+                    const action = e.target.closest('.table-action');
+                    if (!action) {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleConnectedTables(entity.name.toLowerCase());
+                });
                 
                 viewport.appendChild(box);
                 boxElements.set(entity.name.toLowerCase(), box);
@@ -518,6 +579,122 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     entity
                 });
             }
+        }
+
+        function renderTableBox(box, entity) {
+            const displayName = highlightText(entity.displayName, searchTerm);
+            const fieldsHtml = entity.fields.map(f => {
+                const fieldName = highlightText(f.displayName, searchTerm);
+                const fieldType = highlightText(f.type, searchTerm);
+                return \`
+                    <div class="field-row">
+                        <div class="field-badges">
+                            \${f.isPK ? '<span class="badge badge-pk">PK</span>' : ''}
+                            \${f.isFK ? '<span class="badge badge-fk">FK</span>' : ''}
+                        </div>
+                        <span class="field-name">\${fieldName}</span>
+                        <span class="field-type">\${fieldType}</span>
+                    </div>
+                \`;
+            }).join('');
+
+            box.innerHTML = \`
+                <button class="table-action" title="Show linked tables"><i class="fa fa-chain"></i></button>
+                <div class="table-header">\${displayName}</div>
+                <div class="table-body">
+                    \${fieldsHtml}
+                </div>
+            \`;
+        }
+
+        function highlightText(text, search) {
+            if (!search) {
+                return escapeHtml(text);
+            }
+
+            const escapedText = escapeHtml(text);
+            const escapedSearch = search.replace(/[-/\\\\^$*+?.()|[\\\\]{}]/g, '\\$&');
+            const regex = new RegExp('(' + escapedSearch + ')', 'gi');
+            return escapedText.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        function escapeRegex(str) {
+            return str.replace(/[-/\\\\^$*+?.()|[\\\\]{}]/g, '\\$&');
+        }
+
+        function entityMatchesSearch(entity, termLower) {
+            if (!termLower) {
+                return false;
+            }
+            if (entity.displayName.toLowerCase().includes(termLower)) {
+                return true;
+            }
+            if (entity.name.toLowerCase().includes(termLower)) {
+                return true;
+            }
+            for (const field of entity.fields) {
+                if (field.displayName.toLowerCase().includes(termLower)) {
+                    return true;
+                }
+                if (field.name.toLowerCase().includes(termLower)) {
+                    return true;
+                }
+                if (field.type.toLowerCase().includes(termLower)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updateSearch(term) {
+            searchTerm = term.trim();
+            const termLower = searchTerm.toLowerCase();
+
+            for (const entity of data.entities) {
+                const key = entity.name.toLowerCase();
+                const box = boxElements.get(key);
+                const isMatch = entityMatchesSearch(entity, termLower);
+                if (box) {
+                    renderTableBox(box, entity);
+                    box.classList.toggle('search-hit', isMatch && termLower.length > 0);
+                }
+
+                const drawerItem = drawerList.querySelector('.drawer-item[data-entity="' + key + '"]');
+                if (drawerItem) {
+                    drawerItem.classList.toggle('search-hit', isMatch && termLower.length > 0);
+                    const label = drawerItem.querySelector('.drawer-item-label');
+                    if (label) {
+                        label.innerHTML = highlightText(entity.displayName, searchTerm);
+                    }
+                }
+            }
+        }
+
+        function toggleConnectedTables(entityKey) {
+            const connected = new Set([entityKey]);
+            const neighbors = adjacency.get(entityKey) || new Set();
+            for (const n of neighbors) {
+                connected.add(n);
+            }
+
+            for (const key of connected) {
+                visibility.set(key, true);
+                const box = boxElements.get(key);
+                if (box) {
+                    box.classList.remove('hidden');
+                }
+                const drawerItem = drawerList.querySelector('.drawer-item[data-entity="' + key + '"]');
+                if (drawerItem) {
+                    drawerItem.classList.remove('hidden-table');
+                    const checkbox = drawerItem.querySelector('input');
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                }
+            }
+
+            updateToggleAllCheckbox();
+            drawRelations();
         }
 
         function layoutTablesHierarchical(allowedKeys) {
@@ -530,7 +707,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
             const ROW_SPACING = 40;
             const COLUMN_GAP = 40;
-            const MAX_TABLES_PER_COLUMN = 4;
+            const MAX_TABLES_PER_COLUMN = 3;
 
             const parents = new Map();
             const children = new Map();
@@ -559,17 +736,23 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
 
             const queue = [];
+            const rootNodes = [];
             for (const [key, parentSet] of parents.entries()) {
                 if (parentSet.size === 0) {
-                    ranks.set(key, 0);
-                    queue.push(key);
+                    rootNodes.push(key);
                 }
             }
 
-            if (queue.length === 0 && entities.length > 0) {
+            if (rootNodes.length === 0 && entities.length > 0) {
                 const seed = entities[0].name.toLowerCase();
                 ranks.set(seed, 0);
                 queue.push(seed);
+            } else {
+                rootNodes.forEach((key, index) => {
+                    const initialRank = Math.floor(index / MAX_TABLES_PER_COLUMN);
+                    ranks.set(key, initialRank);
+                    queue.push(key);
+                });
             }
 
             while (queue.length > 0) {
@@ -604,28 +787,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     layers.set(rank, []);
                 }
                 layers.get(rank).push(key);
-            }
-
-            const tablesPerRank = new Map();
-            for (const [rank, tables] of layers.entries()) {
-                tablesPerRank.set(rank, tables.length);
-            }
-
-            for (const [rank, tables] of layers.entries()) {
-                if (tables.length > MAX_TABLES_PER_COLUMN) {
-                    const splitPoint = Math.ceil(tables.length / 2);
-                    const newRank = maxRank + 1;
-                    
-                    for (let i = splitPoint; i < tables.length; i++) {
-                        ranks.set(tables[i], newRank);
-                    }
-                    
-                    if (!layers.has(newRank)) {
-                        layers.set(newRank, []);
-                    }
-                    layers.get(newRank).push(...tables.splice(splitPoint));
-                    maxRank = newRank;
-                }
             }
 
             const columnWidths = new Map();
@@ -1042,6 +1203,10 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             toggleAllCheckbox.addEventListener('change', toggleAll);
+
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                updateSearch(e.target.value);
+            });
         }
 
         function escapeHtml(str) {
