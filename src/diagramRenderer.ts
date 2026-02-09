@@ -88,6 +88,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
     <style>
         :root {
             --header-bg: linear-gradient(135deg, #2c5282 0%, #1a365d 100%);
@@ -104,6 +105,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --drawer-bg: #1e1e1e;
             --drawer-border: #3c3c3c;
             --drawer-item-hover: #2a2d2e;
+            --dot-color: rgba(255, 255, 255, 0.15);
+            --drawer-width: 250px;
         }
         body.vscode-dark {
             --table-bg: #2d3748;
@@ -111,11 +114,13 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --field-text: #e2e8f0;
             --type-text: #a0aec0;
             --row-alt: #1a202c;
+            --dot-color: rgba(255, 255, 255, 0.1);
         }
         body.vscode-light {
             --drawer-bg: #f3f3f3;
             --drawer-border: #d4d4d4;
             --drawer-item-hover: #e8e8e8;
+            --dot-color: rgba(0, 0, 0, 0.1);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -181,51 +186,90 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             min-width: 45px;
             text-align: center;
         }
+        #search-input {
+            background: var(--vscode-input-background, #3c3c3c);
+            color: var(--vscode-input-foreground, #cccccc);
+            border: 1px solid var(--vscode-input-border, #3c3c3c);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            width: 200px;
+            outline: none;
+        }
+        #search-input:focus {
+            border-color: var(--vscode-focusBorder, #007acc);
+        }
+        #search-input::placeholder {
+            color: var(--vscode-input-placeholderForeground, #888);
+        }
+        .highlight {
+            background-color: #ffd700;
+            color: #000;
+            font-weight: 600;
+            padding: 1px 2px;
+            border-radius: 2px;
+        }
+        .drawer-item.search-hit {
+            background: var(--drawer-item-hover);
+        }
+        .drawer-item.search-hit .drawer-item-label {
+            font-weight: 600;
+        }
+        .table-box.search-hit {
+            box-shadow: 0 0 0 2px #ffd700, 0 2px 8px rgba(0,0,0,0.15);
+        }
         .main-container {
             flex: 1;
             display: flex;
             overflow: hidden;
         }
         .drawer {
-            width: 250px;
+            width: var(--drawer-width);
+            min-width: 200px;
+            max-width: 500px;
             background: var(--drawer-bg);
             border-right: 1px solid var(--drawer-border);
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
             transition: margin-left 0.2s ease;
+            position: relative;
         }
         .drawer.collapsed {
-            margin-left: -250px;
+            margin-left: calc(-1 * var(--drawer-width));
+        }
+        .drawer-resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 10;
+        }
+        .drawer-resizer:hover {
+            background: var(--vscode-focusBorder, #007acc);
+        }
+        .drawer.resizing .drawer-resizer {
+            background: var(--vscode-focusBorder, #007acc);
         }
         .drawer-header {
             padding: 12px;
             border-bottom: 1px solid var(--drawer-border);
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 8px;
+        }
+        .drawer-header input[type="checkbox"] {
+            cursor: pointer;
         }
         .drawer-header h2 {
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
             opacity: 0.8;
-        }
-        .drawer-actions {
-            display: flex;
-            gap: 4px;
-        }
-        .drawer-actions button {
-            background: transparent;
-            border: none;
-            color: var(--vscode-editor-foreground, #e2e8f0);
-            cursor: pointer;
-            padding: 2px 6px;
-            font-size: 10px;
-            opacity: 0.7;
-        }
-        .drawer-actions button:hover {
-            opacity: 1;
+            flex: 1;
         }
         .drawer-list {
             flex: 1;
@@ -261,6 +305,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             position: relative;
             overflow: hidden;
             cursor: grab;
+            background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+            background-size: 20px 20px;
         }
         .canvas-container.dragging {
             cursor: grabbing;
@@ -288,6 +334,30 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             pointer-events: auto;
             cursor: move;
             user-select: none;
+        }
+        .table-action {
+            position: absolute;
+            top: 5px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #3c3c3c;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            padding: 0;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 5;
+        }
+        .table-action i {
+            pointer-events: none;
+        }
+        .table-action:hover {
+            background: rgba(0,0,0,0.55);
         }
         .table-box.dragging-card {
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
@@ -381,7 +451,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             </div>
         </div>
         <div class="toolbar-controls">
-            <button id="btn-fit">Fit</button>
+            <input type="text" id="search-input" placeholder="Search tables & fields..." />
+            <button id="btn-auto" title="Auto layout">Auto</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
             <button id="btn-zoom-in">+</button>
@@ -389,12 +460,10 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     </div>
     <div class="main-container">
         <div class="drawer" id="drawer">
+            <div class="drawer-resizer" id="drawer-resizer"></div>
             <div class="drawer-header">
+                <input type="checkbox" id="toggle-all-checkbox" checked />
                 <h2>Tables</h2>
-                <div class="drawer-actions">
-                    <button id="btn-show-all">All</button>
-                    <button id="btn-hide-all">None</button>
-                </div>
             </div>
             <div class="drawer-list" id="drawer-list"></div>
         </div>
@@ -409,6 +478,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         const zoomLabel = document.getElementById('zoom-label');
         const drawer = document.getElementById('drawer');
         const drawerList = document.getElementById('drawer-list');
+        const toggleAllCheckbox = document.getElementById('toggle-all-checkbox');
+        const drawerResizer = document.getElementById('drawer-resizer');
 
         let scale = 1;
         let panX = 0;
@@ -418,28 +489,56 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         let lastY = 0;
 
         let draggingCard = null;
-        let cardStartX = 0;
-        let cardStartY = 0;
         let cardOffsetX = 0;
         let cardOffsetY = 0;
 
-        const PADDING = 40;
-        const GAP_X = 80;
-        const GAP_Y = 60;
+        let isResizingDrawer = false;
+        let drawerWidth = 250;
+
+        const GRID_SIZE = 20;
+        const PADDING = 60;
+        const MIN_DRAWER_WIDTH = 200;
+        const MAX_DRAWER_WIDTH = 500;
 
         const positions = new Map();
         const dimensions = new Map();
         const visibility = new Map();
         const boxElements = new Map();
+        const adjacency = new Map();
         let svgLayer = null;
+        let searchTerm = '';
+
+        function snapToGrid(value) {
+            return Math.round(value / GRID_SIZE) * GRID_SIZE;
+        }
+
+        function setDrawerWidth(width) {
+            drawerWidth = Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, width));
+            document.documentElement.style.setProperty('--drawer-width', drawerWidth + 'px');
+        }
 
         function init() {
+            buildAdjacency();
             buildDrawer();
             createTableBoxes();
-            layoutTables();
+            layoutTablesHierarchical();
             drawRelations();
             fitToView();
             setupEventListeners();
+        }
+
+        function buildAdjacency() {
+            for (const e of data.entities) {
+                adjacency.set(e.name.toLowerCase(), new Set());
+            }
+            for (const r of data.relations) {
+                const fromKey = r.from.toLowerCase();
+                const toKey = r.to.toLowerCase();
+                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
+                    adjacency.get(fromKey).add(toKey);
+                    adjacency.get(toKey).add(fromKey);
+                }
+            }
         }
 
         function buildDrawer() {
@@ -460,6 +559,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 checkbox.addEventListener('change', () => {
                     toggleTableVisibility(entity.name.toLowerCase(), checkbox.checked);
                     item.classList.toggle('hidden-table', !checkbox.checked);
+                    updateToggleAllCheckbox();
                 });
                 
                 const label = document.createElement('span');
@@ -473,76 +573,35 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
         }
 
+        function updateToggleAllCheckbox() {
+            const allVisible = Array.from(visibility.values()).every(v => v);
+            toggleAllCheckbox.checked = allVisible;
+        }
+
         function createTableBoxes() {
-            const adjacency = new Map();
-            for (const e of data.entities) {
-                adjacency.set(e.name.toLowerCase(), new Set());
-            }
-            for (const r of data.relations) {
-                const fromKey = r.from.toLowerCase();
-                const toKey = r.to.toLowerCase();
-                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
-                    adjacency.get(fromKey).add(toKey);
-                    adjacency.get(toKey).add(fromKey);
-                }
-            }
-
-            const sorted = [...data.entities].sort((a, b) => {
-                const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
-                const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
-                return bConns - aConns;
-            });
-
-            const visited = new Set();
-            const ordered = [];
-            const queue = [];
-
-            for (const e of sorted) {
-                if (visited.has(e.name.toLowerCase())) continue;
-                queue.push(e);
-                while (queue.length > 0) {
-                    const curr = queue.shift();
-                    const key = curr.name.toLowerCase();
-                    if (visited.has(key)) continue;
-                    visited.add(key);
-                    ordered.push(curr);
-                    const neighbors = adjacency.get(key) || new Set();
-                    for (const nKey of neighbors) {
-                        if (!visited.has(nKey)) {
-                            const neighbor = data.entities.find(e => e.name.toLowerCase() === nKey);
-                            if (neighbor) queue.push(neighbor);
-                        }
-                    }
-                }
-            }
-
-            for (const e of data.entities) {
-                if (!visited.has(e.name.toLowerCase())) {
-                    ordered.push(e);
-                }
-            }
-
-            for (const entity of ordered) {
+            for (const entity of data.entities) {
                 const box = document.createElement('div');
                 box.className = 'table-box';
                 box.dataset.entity = entity.name.toLowerCase();
-                box.innerHTML = \`
-                    <div class="table-header">\${escapeHtml(entity.displayName)}</div>
-                    <div class="table-body">
-                        \${entity.fields.map(f => \`
-                            <div class="field-row">
-                                <div class="field-badges">
-                                    \${f.isPK ? '<span class="badge badge-pk">PK</span>' : ''}
-                                    \${f.isFK ? '<span class="badge badge-fk">FK</span>' : ''}
-                                </div>
-                                <span class="field-name">\${escapeHtml(f.displayName)}</span>
-                                <span class="field-type">\${escapeHtml(f.type)}</span>
-                            </div>
-                        \`).join('')}
-                    </div>
-                \`;
                 
-                box.addEventListener('mousedown', (e) => startCardDrag(e, entity.name.toLowerCase()));
+                renderTableBox(box, entity);
+
+                box.addEventListener('mousedown', (e) => {
+                    if (e.target.closest('.table-action')) {
+                        return;
+                    }
+                    startCardDrag(e, entity.name.toLowerCase());
+                });
+
+                box.addEventListener('click', (e) => {
+                    const action = e.target.closest('.table-action');
+                    if (!action) {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleConnectedTablesAndLayout(entity.name.toLowerCase());
+                });
                 
                 viewport.appendChild(box);
                 boxElements.set(entity.name.toLowerCase(), box);
@@ -552,110 +611,367 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     entity
                 });
             }
-            
-            return ordered;
         }
 
-        function layoutTables() {
-            const ordered = [];
-            const adjacency = new Map();
-            
-            for (const e of data.entities) {
-                adjacency.set(e.name.toLowerCase(), new Set());
+        function renderTableBox(box, entity) {
+            const displayName = highlightText(entity.displayName, searchTerm);
+            const fieldsHtml = entity.fields.map(f => {
+                const fieldName = highlightText(f.displayName, searchTerm);
+                const fieldType = highlightText(f.type, searchTerm);
+                return \`
+                    <div class="field-row">
+                        <div class="field-badges">
+                            \${f.isPK ? '<span class="badge badge-pk">PK</span>' : ''}
+                            \${f.isFK ? '<span class="badge badge-fk">FK</span>' : ''}
+                        </div>
+                        <span class="field-name">\${fieldName}</span>
+                        <span class="field-type">\${fieldType}</span>
+                    </div>
+                \`;
+            }).join('');
+
+            box.innerHTML = \`
+                <button class="table-action" title="Show linked tables"><i class="fa fa-chain"></i></button>
+                <div class="table-header">\${displayName}</div>
+                <div class="table-body">
+                    \${fieldsHtml}
+                </div>
+            \`;
+        }
+
+        function highlightText(text, search) {
+            if (!search) {
+                return escapeHtml(text);
             }
-            for (const r of data.relations) {
-                const fromKey = r.from.toLowerCase();
-                const toKey = r.to.toLowerCase();
-                if (adjacency.has(fromKey) && adjacency.has(toKey)) {
-                    adjacency.get(fromKey).add(toKey);
-                    adjacency.get(toKey).add(fromKey);
+
+            const escapedText = escapeHtml(text);
+            const escapedSearch = search.replace(/[-/\\\\^$*+?.()|[\\\\]{}]/g, '\\$&');
+            const regex = new RegExp('(' + escapedSearch + ')', 'gi');
+            return escapedText.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        function escapeRegex(str) {
+            return str.replace(/[-/\\\\^$*+?.()|[\\\\]{}]/g, '\\$&');
+        }
+
+        function entityMatchesSearch(entity, termLower) {
+            if (!termLower) {
+                return false;
+            }
+            if (entity.displayName.toLowerCase().includes(termLower)) {
+                return true;
+            }
+            if (entity.name.toLowerCase().includes(termLower)) {
+                return true;
+            }
+            for (const field of entity.fields) {
+                if (field.displayName.toLowerCase().includes(termLower)) {
+                    return true;
+                }
+                if (field.name.toLowerCase().includes(termLower)) {
+                    return true;
+                }
+                if (field.type.toLowerCase().includes(termLower)) {
+                    return true;
                 }
             }
+            return false;
+        }
 
-            const sorted = [...data.entities].sort((a, b) => {
-                const aConns = adjacency.get(a.name.toLowerCase())?.size || 0;
-                const bConns = adjacency.get(b.name.toLowerCase())?.size || 0;
-                if (bConns !== aConns) return bConns - aConns;
-                return a.displayName.localeCompare(b.displayName);
-            });
+        function updateSearch(term) {
+            searchTerm = term.trim();
+            const termLower = searchTerm.toLowerCase();
 
-            const visited = new Set();
-            const queue = [];
+            for (const entity of data.entities) {
+                const key = entity.name.toLowerCase();
+                const box = boxElements.get(key);
+                const isMatch = entityMatchesSearch(entity, termLower);
+                if (box) {
+                    renderTableBox(box, entity);
+                    box.classList.toggle('search-hit', isMatch && termLower.length > 0);
+                }
 
-            for (const e of sorted) {
-                if (visited.has(e.name.toLowerCase())) continue;
-                queue.push(e);
-                while (queue.length > 0) {
-                    const curr = queue.shift();
-                    const key = curr.name.toLowerCase();
-                    if (visited.has(key)) continue;
-                    visited.add(key);
-                    ordered.push(curr);
-                    
-                    const neighbors = Array.from(adjacency.get(key) || []);
-                    neighbors.sort((a, b) => {
-                        const aConns = adjacency.get(a)?.size || 0;
-                        const bConns = adjacency.get(b)?.size || 0;
-                        return bConns - aConns;
-                    });
-                    
-                    for (const nKey of neighbors) {
-                        if (!visited.has(nKey)) {
-                            const neighbor = data.entities.find(e => e.name.toLowerCase() === nKey);
-                            if (neighbor) queue.push(neighbor);
-                        }
+                const drawerItem = drawerList.querySelector('.drawer-item[data-entity="' + key + '"]');
+                if (drawerItem) {
+                    drawerItem.classList.toggle('search-hit', isMatch && termLower.length > 0);
+                    const label = drawerItem.querySelector('.drawer-item-label');
+                    if (label) {
+                        label.innerHTML = highlightText(entity.displayName, searchTerm);
+                    }
+                }
+            }
+        }
+
+        function toggleConnectedTablesAndLayout(entityKey) {
+            const connected = new Set([entityKey]);
+            const neighbors = adjacency.get(entityKey) || new Set();
+            for (const n of neighbors) {
+                connected.add(n);
+            }
+
+            for (const key of connected) {
+                visibility.set(key, true);
+                const box = boxElements.get(key);
+                if (box) {
+                    box.classList.remove('hidden');
+                }
+                const drawerItem = drawerList.querySelector('.drawer-item[data-entity="' + key + '"]');
+                if (drawerItem) {
+                    drawerItem.classList.remove('hidden-table');
+                    const checkbox = drawerItem.querySelector('input');
+                    if (checkbox) {
+                        checkbox.checked = true;
                     }
                 }
             }
 
-            for (const e of data.entities) {
-                if (!visited.has(e.name.toLowerCase())) {
-                    ordered.push(e);
-                }
-            }
+            updateToggleAllCheckbox();
+            autoLayout();
+        }
 
-            const count = ordered.length;
+        function layoutTablesHierarchical(allowedKeys) {
+            const allowedSet = allowedKeys ? new Set(allowedKeys) : null;
+            const entities = allowedSet
+                ? data.entities.filter(e => allowedSet.has(e.name.toLowerCase()))
+                : data.entities;
+            const count = entities.length;
             if (count === 0) return;
 
-            const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.2)));
-            const colWidths = [];
-            const rowHeights = [];
+            const ROW_SPACING = 40;
+            const COLUMN_GAP = 40;
+            const MAX_TABLES_PER_COLUMN = 3;
 
-            for (let i = 0; i < ordered.length; i++) {
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                const dim = dimensions.get(ordered[i].name.toLowerCase());
-                if (!dim) continue;
-                colWidths[col] = Math.max(colWidths[col] || 0, dim.w);
-                rowHeights[row] = Math.max(rowHeights[row] || 0, dim.h);
+            const parents = new Map();
+            const children = new Map();
+
+            for (const e of entities) {
+                const key = e.name.toLowerCase();
+                parents.set(key, new Set());
+                children.set(key, new Set());
             }
 
-            for (let i = 0; i < ordered.length; i++) {
-                const entity = ordered[i];
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                const dim = dimensions.get(entity.name.toLowerCase());
-                if (!dim) continue;
-
-                let x = PADDING;
-                for (let c = 0; c < col; c++) {
-                    x += (colWidths[c] || 0) + GAP_X;
+            for (const r of data.relations) {
+                const child = r.from.toLowerCase();
+                const parent = r.to.toLowerCase();
+                if (allowedSet && (!allowedSet.has(child) || !allowedSet.has(parent))) {
+                    continue;
                 }
-                x += ((colWidths[col] || 0) - dim.w) / 2;
+                if (parents.has(child) && children.has(parent)) {
+                    parents.get(child).add(parent);
+                    children.get(parent).add(child);
+                }
+            }
 
+            const ranks = new Map();
+            for (const e of entities) {
+                ranks.set(e.name.toLowerCase(), Number.POSITIVE_INFINITY);
+            }
+
+            const queue = [];
+            const rootNodes = [];
+            for (const [key, parentSet] of parents.entries()) {
+                if (parentSet.size === 0) {
+                    rootNodes.push(key);
+                }
+            }
+
+            if (rootNodes.length === 0 && entities.length > 0) {
+                const seed = entities[0].name.toLowerCase();
+                ranks.set(seed, 0);
+                queue.push(seed);
+            } else {
+                rootNodes.forEach((key, index) => {
+                    const initialRank = Math.floor(index / MAX_TABLES_PER_COLUMN);
+                    ranks.set(key, initialRank);
+                    queue.push(key);
+                });
+            }
+
+            while (queue.length > 0) {
+                const current = queue.shift();
+                const currentRank = ranks.get(current) || 0;
+                for (const child of children.get(current) || []) {
+                    if ((ranks.get(child) || Number.POSITIVE_INFINITY) > currentRank + 1) {
+                        ranks.set(child, currentRank + 1);
+                        queue.push(child);
+                    }
+                }
+            }
+
+            for (const [key, rank] of ranks.entries()) {
+                if (!Number.isFinite(rank)) {
+                    ranks.set(key, 0);
+                }
+            }
+
+            const uniqueRanks = Array.from(new Set(ranks.values())).sort((a, b) => a - b);
+            const rankMap = new Map();
+            uniqueRanks.forEach((rank, index) => rankMap.set(rank, index));
+            for (const [key, rank] of ranks.entries()) {
+                ranks.set(key, rankMap.get(rank));
+            }
+
+            const layers = new Map();
+            let maxRank = 0;
+            for (const [key, rank] of ranks.entries()) {
+                maxRank = Math.max(maxRank, rank);
+                if (!layers.has(rank)) {
+                    layers.set(rank, []);
+                }
+                layers.get(rank).push(key);
+            }
+
+            const columnWidths = new Map();
+            for (let rank = 0; rank <= maxRank; rank++) {
+                const layer = layers.get(rank) || [];
+                let maxWidth = 0;
+                for (const key of layer) {
+                    const dim = dimensions.get(key);
+                    if (dim) {
+                        maxWidth = Math.max(maxWidth, dim.w);
+                    }
+                }
+                columnWidths.set(rank, maxWidth || 220);
+            }
+
+            const columnX = new Map();
+            let xCursor = PADDING;
+            for (let rank = 0; rank <= maxRank; rank++) {
+                columnX.set(rank, xCursor);
+                xCursor += (columnWidths.get(rank) || 220) + COLUMN_GAP;
+            }
+
+            const getLayerIndex = (key) => {
+                const r = ranks.get(key);
+                const layer = layers.get(r);
+                return layer ? layer.indexOf(key) : 0;
+            };
+
+            const orderLayer = (rank) => {
+                const layer = layers.get(rank) || [];
+                layer.sort((a, b) => {
+                    let aScore = 0, bScore = 0, aCount = 0, bCount = 0;
+
+                    for (const p of parents.get(a) || []) {
+                        aScore += getLayerIndex(p);
+                        aCount++;
+                    }
+                    for (const c of children.get(a) || []) {
+                        aScore += getLayerIndex(c);
+                        aCount++;
+                    }
+
+                    for (const p of parents.get(b) || []) {
+                        bScore += getLayerIndex(p);
+                        bCount++;
+                    }
+                    for (const c of children.get(b) || []) {
+                        bScore += getLayerIndex(c);
+                        bCount++;
+                    }
+
+                    const aAvg = aCount > 0 ? aScore / aCount : 0;
+                    const bAvg = bCount > 0 ? bScore / bCount : 0;
+                    return aAvg - bAvg;
+                });
+            };
+
+            for (let iter = 0; iter < 4; iter++) {
+                for (let rank = 0; rank <= maxRank; rank++) {
+                    orderLayer(rank);
+                }
+                for (let rank = maxRank; rank >= 0; rank--) {
+                    orderLayer(rank);
+                }
+            }
+
+            for (let rank = 0; rank <= maxRank; rank++) {
+                const layer = layers.get(rank) || [];
                 let y = PADDING;
-                for (let r = 0; r < row; r++) {
-                    y += (rowHeights[r] || 0) + GAP_Y;
-                }
+                const x = columnX.get(rank) || PADDING;
 
-                positions.set(entity.name.toLowerCase(), { x, y, w: dim.w, h: dim.h });
-                
-                const box = boxElements.get(entity.name.toLowerCase());
-                if (box) {
-                    box.style.left = x + 'px';
-                    box.style.top = y + 'px';
+                for (const key of layer) {
+                    const dim = dimensions.get(key);
+                    if (!dim) continue;
+
+                    const snappedX = snapToGrid(x);
+                    const snappedY = snapToGrid(y);
+
+                    positions.set(key, {
+                        x: snappedX,
+                        y: snappedY,
+                        w: dim.w,
+                        h: dim.h
+                    });
+
+                    y += dim.h + ROW_SPACING;
                 }
             }
+
+            for (let iter = 0; iter < 3; iter++) {
+                for (let rank = 0; rank <= maxRank; rank++) {
+                    const layer = layers.get(rank) || [];
+                    const targetY = new Map();
+
+                    for (const key of layer) {
+                        const pos = positions.get(key);
+                        if (!pos) continue;
+
+                        const neighbors = [...(parents.get(key) || []), ...(children.get(key) || [])];
+                        if (neighbors.length === 0) {
+                            targetY.set(key, pos.y);
+                            continue;
+                        }
+
+                        let sum = 0;
+                        let count = 0;
+                        for (const n of neighbors) {
+                            const nPos = positions.get(n);
+                            if (nPos) {
+                                sum += nPos.y + nPos.h / 2;
+                                count++;
+                            }
+                        }
+
+                        const avg = count > 0 ? (sum / count - pos.h / 2) : pos.y;
+                        targetY.set(key, avg);
+                    }
+
+                    layer.sort((a, b) => (targetY.get(a) || 0) - (targetY.get(b) || 0));
+
+                    let y = PADDING;
+                    const x = columnX.get(rank) || PADDING;
+                    for (const key of layer) {
+                        const dim = dimensions.get(key);
+                        if (!dim) continue;
+
+                        positions.set(key, {
+                            x: snapToGrid(x),
+                            y: snapToGrid(y),
+                            w: dim.w,
+                            h: dim.h
+                        });
+                        y += dim.h + ROW_SPACING;
+                    }
+                }
+            }
+
+            for (const [key, pos] of positions.entries()) {
+                const box = boxElements.get(key);
+                if (box) {
+                    box.style.left = pos.x + 'px';
+                    box.style.top = pos.y + 'px';
+                }
+            }
+        }
+
+        function autoLayout() {
+            const visibleKeys = Array.from(visibility.entries())
+                .filter(([, visible]) => visible)
+                .map(([key]) => key);
+            layoutTablesHierarchical(visibleKeys);
+            drawRelations();
+            fitToView();
         }
 
         function drawRelations() {
@@ -760,29 +1076,22 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             drawRelations();
         }
 
-        function showAllTables() {
+        function toggleAll() {
+            const allVisible = Array.from(visibility.values()).every(v => v);
+            const newState = !allVisible;
+            
             for (const key of visibility.keys()) {
-                visibility.set(key, true);
+                visibility.set(key, newState);
                 const box = boxElements.get(key);
-                if (box) box.classList.remove('hidden');
+                if (box) box.classList.toggle('hidden', !newState);
             }
+            
             drawerList.querySelectorAll('.drawer-item').forEach(item => {
-                item.classList.remove('hidden-table');
-                item.querySelector('input').checked = true;
+                item.classList.toggle('hidden-table', !newState);
+                item.querySelector('input').checked = newState;
             });
-            drawRelations();
-        }
-
-        function hideAllTables() {
-            for (const key of visibility.keys()) {
-                visibility.set(key, false);
-                const box = boxElements.get(key);
-                if (box) box.classList.add('hidden');
-            }
-            drawerList.querySelectorAll('.drawer-item').forEach(item => {
-                item.classList.add('hidden-table');
-                item.querySelector('input').checked = false;
-            });
+            
+            toggleAllCheckbox.checked = newState;
             drawRelations();
         }
 
@@ -794,8 +1103,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             const box = boxElements.get(entityKey);
             const pos = positions.get(entityKey);
             
-            cardStartX = pos.x;
-            cardStartY = pos.y;
             cardOffsetX = (e.clientX - container.getBoundingClientRect().left - panX) / scale - pos.x;
             cardOffsetY = (e.clientY - container.getBoundingClientRect().top - panY) / scale - pos.y;
             
@@ -811,8 +1118,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             const y = (e.clientY - rect.top - panY) / scale - cardOffsetY;
             
             const pos = positions.get(draggingCard);
-            pos.x = Math.max(0, x);
-            pos.y = Math.max(0, y);
+            pos.x = Math.max(PADDING, snapToGrid(x));
+            pos.y = Math.max(PADDING, snapToGrid(y));
             
             const box = boxElements.get(draggingCard);
             box.style.left = pos.x + 'px';
@@ -891,6 +1198,12 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mousemove', (e) => {
+                if (isResizingDrawer) {
+                    const newWidth = e.clientX;
+                    setDrawerWidth(newWidth);
+                    return;
+                }
+
                 if (draggingCard) {
                     handleCardDrag(e);
                     return;
@@ -904,11 +1217,21 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mouseup', () => {
+                if (isResizingDrawer) {
+                    isResizingDrawer = false;
+                    drawer.classList.remove('resizing');
+                }
                 if (draggingCard) {
                     endCardDrag();
                 }
                 isPanning = false;
                 container.classList.remove('dragging');
+            });
+
+            drawerResizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                isResizingDrawer = true;
+                drawer.classList.add('resizing');
             });
 
             document.getElementById('btn-zoom-in').addEventListener('click', () => {
@@ -921,14 +1244,17 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 zoom(-0.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
             });
 
-            document.getElementById('btn-fit').addEventListener('click', fitToView);
+            document.getElementById('btn-auto').addEventListener('click', autoLayout);
 
             document.getElementById('btn-toggle-drawer').addEventListener('click', () => {
                 drawer.classList.toggle('collapsed');
             });
 
-            document.getElementById('btn-show-all').addEventListener('click', showAllTables);
-            document.getElementById('btn-hide-all').addEventListener('click', hideAllTables);
+            toggleAllCheckbox.addEventListener('change', toggleAll);
+
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                updateSearch(e.target.value);
+            });
         }
 
         function escapeHtml(str) {
