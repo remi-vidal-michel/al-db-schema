@@ -33,7 +33,7 @@ export async function scanAlProject(workspaceFolder: vscode.Uri): Promise<AlProj
 
     const detection = await detectAlProject(workspaceFolder);
     if (!detection.isAlProject) {
-        result.errors.push("This folder does not appear to be an AL project (app.json missing or no .al files found).");
+        result.errors.push("This folder does not appear to be an AL project.");
         return result;
     }
     result.appJson = detection.appJson;
