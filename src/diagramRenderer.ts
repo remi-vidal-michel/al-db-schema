@@ -337,14 +337,14 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         }
         .table-action {
             position: absolute;
-            top: 5px;
+            top: 7px;
             right: 6px;
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #3c3c3c;
+            background: transparent;
             color: #ffffff;
             border: none;
             border-radius: 4px;
@@ -356,11 +356,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         .table-action i,
         .table-action .icon-chain {
             pointer-events: none;
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
         }
         .table-action:hover {
-            background: rgba(0,0,0,0.55);
+            background: #00000050;
         }
         .table-box.dragging-card {
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
