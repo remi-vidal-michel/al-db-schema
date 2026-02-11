@@ -729,8 +729,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             if (count === 0) return;
 
             const ROW_SPACING = 40;
-            const COLUMN_GAP = 40;
-            const MAX_TABLES_PER_COLUMN = 3;
+            const COLUMN_GAP = 52;
+            const MAX_TABLES_PER_COLUMN = 4;
+            const RANK_RELAX_ITERATIONS = 14;
+            const ORDER_SWEEP_ITERATIONS = 10;
+            const VERTICAL_RELAX_ITERATIONS = 6;
 
             const parents = new Map();
             const children = new Map();
@@ -755,10 +758,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
             const ranks = new Map();
             for (const e of entities) {
-                ranks.set(e.name.toLowerCase(), Number.POSITIVE_INFINITY);
+                ranks.set(e.name.toLowerCase(), 0);
             }
 
-            const queue = [];
             const rootNodes = [];
             for (const [key, parentSet] of parents.entries()) {
                 if (parentSet.size === 0) {
@@ -767,33 +769,113 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }
 
             if (rootNodes.length === 0 && entities.length > 0) {
-                const seed = entities[0].name.toLowerCase();
-                ranks.set(seed, 0);
-                queue.push(seed);
-            } else {
-                rootNodes.forEach((key, index) => {
-                    const initialRank = Math.floor(index / MAX_TABLES_PER_COLUMN);
-                    ranks.set(key, initialRank);
-                    queue.push(key);
-                });
+                const fallbackRoot = [...parents.entries()]
+                    .sort((a, b) => b[1].size - a[1].size)[0]?.[0];
+                if (fallbackRoot) {
+                    rootNodes.push(fallbackRoot);
+                }
             }
 
-            while (queue.length > 0) {
-                const current = queue.shift();
-                const currentRank = ranks.get(current) || 0;
-                for (const child of children.get(current) || []) {
-                    if ((ranks.get(child) || Number.POSITIVE_INFINITY) > currentRank + 1) {
-                        ranks.set(child, currentRank + 1);
-                        queue.push(child);
+            for (const key of ranks.keys()) {
+                ranks.set(key, rootNodes.includes(key) ? 0 : 1);
+            }
+
+            for (let iter = 0; iter < RANK_RELAX_ITERATIONS; iter++) {
+                const nextRanks = new Map();
+                let minRank = Number.POSITIVE_INFINITY;
+
+                for (const key of ranks.keys()) {
+                    const currentRank = ranks.get(key) || 0;
+                    const parentRanks = [...(parents.get(key) || [])].map(parentKey => (ranks.get(parentKey) || 0) + 1);
+                    const childRanks = [...(children.get(key) || [])].map(childKey => (ranks.get(childKey) || 0) - 1);
+
+                    const influence = parentRanks.concat(childRanks);
+                    const targetRank = influence.length > 0
+                        ? influence.reduce((sum, value) => sum + value, 0) / influence.length
+                        : currentRank;
+
+                    let nextRank = currentRank * 0.4 + targetRank * 0.6;
+
+                    for (const parentKey of parents.get(key) || []) {
+                        nextRank = Math.max(nextRank, (ranks.get(parentKey) || 0) + 0.6);
                     }
+
+                    if (rootNodes.includes(key)) {
+                        nextRank = Math.min(nextRank, 0.2);
+                    }
+
+                    nextRanks.set(key, nextRank);
+                    minRank = Math.min(minRank, nextRank);
+                }
+
+                for (const [key, rank] of nextRanks.entries()) {
+                    ranks.set(key, rank - (Number.isFinite(minRank) ? minRank : 0));
                 }
             }
 
             for (const [key, rank] of ranks.entries()) {
-                if (!Number.isFinite(rank)) {
-                    ranks.set(key, 0);
-                }
+                ranks.set(key, Math.max(0, Math.round(rank)));
             }
+
+            const sourceRanks = new Map(ranks);
+            const sourceRankOrder = Array.from(new Set(sourceRanks.values())).sort((a, b) => a - b);
+            let compactRank = 0;
+
+            for (const sourceRank of sourceRankOrder) {
+                const layer = [...sourceRanks.entries()]
+                    .filter(([, rank]) => rank === sourceRank)
+                    .map(([key]) => key)
+                    .sort((a, b) => {
+                        const aDegree = (parents.get(a)?.size || 0) + (children.get(a)?.size || 0);
+                        const bDegree = (parents.get(b)?.size || 0) + (children.get(b)?.size || 0);
+                        return bDegree - aDegree;
+                    });
+
+                if (layer.length === 0) {
+                    continue;
+                }
+
+                for (let index = 0; index < layer.length; index++) {
+                    const key = layer[index];
+                    const chunkOffset = Math.floor(index / MAX_TABLES_PER_COLUMN);
+                    ranks.set(key, compactRank + chunkOffset);
+                }
+
+                compactRank += Math.max(1, Math.ceil(layer.length / MAX_TABLES_PER_COLUMN));
+            }
+
+            const tightenLeafNodeRanks = () => {
+                for (let iter = 0; iter < 4; iter++) {
+                    let changed = false;
+
+                    for (const key of ranks.keys()) {
+                        const nodeParents = [...(parents.get(key) || [])];
+                        const nodeChildren = [...(children.get(key) || [])];
+                        const current = ranks.get(key) || 0;
+
+                        let desired = current;
+
+                        if (nodeParents.length === 1 && nodeChildren.length === 0) {
+                            desired = (ranks.get(nodeParents[0]) || 0) + 1;
+                        } else if (nodeParents.length === 0 && nodeChildren.length === 1) {
+                            desired = Math.max(0, (ranks.get(nodeChildren[0]) || 0) - 1);
+                        } else {
+                            continue;
+                        }
+
+                        if (Math.abs(desired - current) > 1) {
+                            ranks.set(key, desired);
+                            changed = true;
+                        }
+                    }
+
+                    if (!changed) {
+                        break;
+                    }
+                }
+            };
+
+            tightenLeafNodeRanks();
 
             const uniqueRanks = Array.from(new Set(ranks.values())).sort((a, b) => a - b);
             const rankMap = new Map();
@@ -832,47 +914,128 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 xCursor += (columnWidths.get(rank) || 220) + COLUMN_GAP;
             }
 
-            const getLayerIndex = (key) => {
-                const r = ranks.get(key);
-                const layer = layers.get(r);
-                return layer ? layer.indexOf(key) : 0;
+            const getLayerIndexMap = () => {
+                const map = new Map();
+                for (const [rank, layer] of layers.entries()) {
+                    for (let index = 0; index < layer.length; index++) {
+                        map.set(layer[index], { rank, index });
+                    }
+                }
+                return map;
             };
 
-            const orderLayer = (rank) => {
+            const orderLayer = (rank, useParents) => {
                 const layer = layers.get(rank) || [];
+                if (layer.length <= 1) {
+                    return;
+                }
+
+                const layerIndexMap = getLayerIndexMap();
+
                 layer.sort((a, b) => {
-                    let aScore = 0, bScore = 0, aCount = 0, bCount = 0;
+                    const refsA = useParents ? parents.get(a) || [] : children.get(a) || [];
+                    const refsB = useParents ? parents.get(b) || [] : children.get(b) || [];
 
-                    for (const p of parents.get(a) || []) {
-                        aScore += getLayerIndex(p);
-                        aCount++;
-                    }
-                    for (const c of children.get(a) || []) {
-                        aScore += getLayerIndex(c);
-                        aCount++;
-                    }
+                    const scoreFor = (refs) => {
+                        let sum = 0;
+                        let count = 0;
+                        for (const ref of refs) {
+                            const meta = layerIndexMap.get(ref);
+                            if (meta) {
+                                sum += meta.index;
+                                count++;
+                            }
+                        }
+                        if (count === 0) {
+                            return Number.POSITIVE_INFINITY;
+                        }
+                        return sum / count;
+                    };
 
-                    for (const p of parents.get(b) || []) {
-                        bScore += getLayerIndex(p);
-                        bCount++;
-                    }
-                    for (const c of children.get(b) || []) {
-                        bScore += getLayerIndex(c);
-                        bCount++;
-                    }
+                    const aScore = scoreFor(refsA);
+                    const bScore = scoreFor(refsB);
 
-                    const aAvg = aCount > 0 ? aScore / aCount : 0;
-                    const bAvg = bCount > 0 ? bScore / bCount : 0;
-                    return aAvg - bAvg;
+                    if (aScore === bScore) {
+                        const aDegree = (parents.get(a)?.size || 0) + (children.get(a)?.size || 0);
+                        const bDegree = (parents.get(b)?.size || 0) + (children.get(b)?.size || 0);
+                        return bDegree - aDegree;
+                    }
+                    return aScore - bScore;
                 });
             };
 
-            for (let iter = 0; iter < 4; iter++) {
-                for (let rank = 0; rank <= maxRank; rank++) {
-                    orderLayer(rank);
+            const countCrossingsBetween = (leftRank, rightRank) => {
+                const leftLayer = layers.get(leftRank) || [];
+                const rightLayer = layers.get(rightRank) || [];
+                if (leftLayer.length <= 1 || rightLayer.length <= 1) {
+                    return 0;
                 }
-                for (let rank = maxRank; rank >= 0; rank--) {
-                    orderLayer(rank);
+
+                const rightIndex = new Map(rightLayer.map((key, index) => [key, index]));
+                const edgeTargets = [];
+
+                for (const leftKey of leftLayer) {
+                    const targets = [...(children.get(leftKey) || [])]
+                        .filter(target => rightIndex.has(target))
+                        .map(target => rightIndex.get(target))
+                        .sort((a, b) => a - b);
+
+                    for (const target of targets) {
+                        edgeTargets.push(target);
+                    }
+                }
+
+                let crossings = 0;
+                for (let i = 0; i < edgeTargets.length; i++) {
+                    for (let j = i + 1; j < edgeTargets.length; j++) {
+                        if (edgeTargets[i] > edgeTargets[j]) {
+                            crossings++;
+                        }
+                    }
+                }
+
+                return crossings;
+            };
+
+            const transposeLayer = (rank) => {
+                const layer = layers.get(rank) || [];
+                if (layer.length <= 1) {
+                    return;
+                }
+
+                let changed = true;
+                while (changed) {
+                    changed = false;
+
+                    for (let i = 0; i < layer.length - 1; i++) {
+                        const before =
+                            (rank > 0 ? countCrossingsBetween(rank - 1, rank) : 0) +
+                            (rank < maxRank ? countCrossingsBetween(rank, rank + 1) : 0);
+
+                        [layer[i], layer[i + 1]] = [layer[i + 1], layer[i]];
+
+                        const after =
+                            (rank > 0 ? countCrossingsBetween(rank - 1, rank) : 0) +
+                            (rank < maxRank ? countCrossingsBetween(rank, rank + 1) : 0);
+
+                        if (after <= before) {
+                            changed = changed || (after < before);
+                        } else {
+                            [layer[i], layer[i + 1]] = [layer[i + 1], layer[i]];
+                        }
+                    }
+                }
+            };
+
+            for (let iter = 0; iter < ORDER_SWEEP_ITERATIONS; iter++) {
+                for (let rank = 1; rank <= maxRank; rank++) {
+                    orderLayer(rank, true);
+                }
+                for (let rank = maxRank - 1; rank >= 0; rank--) {
+                    orderLayer(rank, false);
+                }
+                for (let rank = 0; rank <= maxRank; rank++) {
+                    transposeLayer(rank);
                 }
             }
 
@@ -899,7 +1062,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 }
             }
 
-            for (let iter = 0; iter < 3; iter++) {
+            for (let iter = 0; iter < VERTICAL_RELAX_ITERATIONS; iter++) {
                 for (let rank = 0; rank <= maxRank; rank++) {
                     const layer = layers.get(rank) || [];
                     const targetY = new Map();
