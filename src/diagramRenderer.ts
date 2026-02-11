@@ -1232,7 +1232,12 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             copyJsonButton.addEventListener('click', async () => {
-                const jsonText = JSON.stringify(data);
+                const visibleEntities = data.entities.filter((e) => visibility.get(e.name.toLowerCase()));
+                const visibleSet = new Set(visibleEntities.map((e) => e.name.toLowerCase()));
+                const visibleRelations = data.relations.filter((r) =>
+                    visibleSet.has(r.from.toLowerCase()) && visibleSet.has(r.to.toLowerCase()),
+                );
+                const jsonText = JSON.stringify({ entities: visibleEntities, relations: visibleRelations });
                 const originalLabel = copyJsonButton.innerHTML;
                 const confirmCopy = () => {
                     copyJsonButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="12" height="12" aria-hidden="true" focusable="false"><path fill="currentColor" d="M173.9 439.4L7.4 272.9c-9.9-9.9-9.9-26 0-35.9l35.9-35.9c9.9-9.9 26-9.9 35.9 0l94.7 94.7 259.2-259.2c9.9-9.9 26-9.9 35.9 0l35.9 35.9c9.9 9.9 9.9 26 0 35.9L209.8 439.4c-9.9 9.9-26 9.9-35.9 0z"/></svg>';
