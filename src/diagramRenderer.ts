@@ -1,8 +1,8 @@
-import { AlProjectScanResult } from './types';
+import { AlProjectScanResult } from "./types";
 
 interface DiagramField {
     name: string;
-    displayName: string;
+    caption: string;
     type: string;
     isPK: boolean;
     isFK: boolean;
@@ -10,7 +10,7 @@ interface DiagramField {
 
 interface DiagramEntity {
     name: string;
-    displayName: string;
+    caption: string;
     fields: DiagramField[];
 }
 
@@ -22,25 +22,25 @@ interface DiagramRelation {
 }
 
 export function generateDiagramHtml(scanResult: AlProjectScanResult, title: string, subtitle: string): string {
-    const tables = scanResult.tables.filter(t => t.objectType === 'table');
-    const localTableNames = new Set(tables.map(t => t.name.toLowerCase()));
+    const tables = scanResult.tables.filter((t) => t.objectType === "table");
+    const localTableNames = new Set(tables.map((t) => t.name.toLowerCase()));
     const externalExtensions = scanResult.tables.filter(
-        t => t.objectType === 'tableextension' && !localTableNames.has((t.extendsTable || '').toLowerCase())
+        (t) => t.objectType === "tableextension" && !localTableNames.has((t.extendsTable || "").toLowerCase()),
     );
 
     const allEntities = [...tables, ...externalExtensions];
     const entityMap = new Map<string, DiagramEntity>();
 
     for (const table of allEntities) {
-        const entityName = table.objectType === 'tableextension' ? table.extendsTable || table.name : table.name;
+        const entityName = table.objectType === "tableextension" ? table.extendsTable || table.name : table.name;
         if (entityMap.has(entityName.toLowerCase())) {
             continue;
         }
 
-        const displayName = table.caption || entityName;
-        const fields: DiagramField[] = table.fields.map(f => ({
+        const caption = table.caption || entityName;
+        const fields: DiagramField[] = table.fields.map((f) => ({
             name: f.name,
-            displayName: f.caption || f.name,
+            caption: f.caption || f.name,
             type: f.type,
             isPK: f.isPrimaryKey,
             isFK: f.isForeignKey,
@@ -48,7 +48,7 @@ export function generateDiagramHtml(scanResult: AlProjectScanResult, title: stri
 
         entityMap.set(entityName.toLowerCase(), {
             name: entityName,
-            displayName,
+            caption,
             fields,
         });
     }
@@ -71,7 +71,7 @@ export function generateDiagramHtml(scanResult: AlProjectScanResult, title: stri
             from: rel.fromTable,
             fromField: rel.fromField,
             to: rel.toTable,
-            toField: rel.toField || '',
+            toField: rel.toField || "",
         });
     }
 
@@ -88,7 +88,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
+    
     <style>
         :root {
             --header-bg: linear-gradient(135deg, #2c5282 0%, #1a365d 100%);
@@ -102,11 +102,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             --pk-text: #ffffff;
             --fk-bg: #4299e1;
             --fk-text: #ffffff;
-            --drawer-bg: #1e1e1e;
+            --drawer-bg: #1a202c;
             --drawer-border: #3c3c3c;
             --drawer-item-hover: #2a2d2e;
             --dot-color: rgba(255, 255, 255, 0.15);
-            --drawer-width: 250px;
+            --drawer-width: 280px;
         }
         body.vscode-dark {
             --table-bg: #2d3748;
@@ -193,7 +193,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             padding: 5px 10px;
             border-radius: 3px;
             font-size: 12px;
-            width: 200px;
+            width: 150px;
             outline: none;
         }
         #search-input:focus {
@@ -225,8 +225,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         }
         .drawer {
             width: var(--drawer-width);
-            min-width: 200px;
-            max-width: 500px;
             background: var(--drawer-bg);
             border-right: 1px solid var(--drawer-border);
             display: flex;
@@ -237,22 +235,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         }
         .drawer.collapsed {
             margin-left: calc(-1 * var(--drawer-width));
-        }
-        .drawer-resizer {
-            position: absolute;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-            cursor: col-resize;
-            background: transparent;
-            z-index: 10;
-        }
-        .drawer-resizer:hover {
-            background: var(--vscode-focusBorder, #007acc);
-        }
-        .drawer.resizing .drawer-resizer {
-            background: var(--vscode-focusBorder, #007acc);
         }
         .drawer-header {
             padding: 12px;
@@ -270,6 +252,16 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             text-transform: uppercase;
             opacity: 0.8;
             flex: 1;
+        }
+        .drawer-header .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 24px;
+            padding: 0;
+            font-size: 12px;
+            line-height: 1;
         }
         .drawer-list {
             flex: 1;
@@ -337,14 +329,14 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         }
         .table-action {
             position: absolute;
-            top: 5px;
+            top: 7px;
             right: 6px;
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #3c3c3c;
+            background: transparent;
             color: #ffffff;
             border: none;
             border-radius: 4px;
@@ -353,11 +345,14 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             cursor: pointer;
             z-index: 5;
         }
-        .table-action i {
+        .table-action i,
+        .table-action .icon-chain {
             pointer-events: none;
+            width: 14px;
+            height: 14px;
         }
         .table-action:hover {
-            background: rgba(0,0,0,0.55);
+            background: #00000050;
         }
         .table-box.dragging-card {
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
@@ -377,7 +372,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             text-overflow: ellipsis;
         }
         .table-body {
-            max-height: 300px;
+            max-height: calc(28px * 6 - 1px);
             overflow-y: auto;
         }
         .field-row {
@@ -451,7 +446,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             </div>
         </div>
         <div class="toolbar-controls">
-            <input type="text" id="search-input" placeholder="Search tables & fields..." />
             <button id="btn-auto" title="Auto layout">Auto</button>
             <button id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
@@ -460,10 +454,15 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
     </div>
     <div class="main-container">
         <div class="drawer" id="drawer">
-            <div class="drawer-resizer" id="drawer-resizer"></div>
             <div class="drawer-header">
                 <input type="checkbox" id="toggle-all-checkbox" checked />
                 <h2>Tables</h2>
+                <input type="text" id="search-input" placeholder="Search tables & fields..." />
+                <button class="btn" id="btn-copy-json" title="Copy data JSON" aria-label="Copy data JSON">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="14" height="14" aria-hidden="true" focusable="false">
+                        <path fill="currentColor" d="M352 528L128 528C119.2 528 112 520.8 112 512L112 288C112 279.2 119.2 272 128 272L176 272L176 224L128 224C92.7 224 64 252.7 64 288L64 512C64 547.3 92.7 576 128 576L352 576C387.3 576 416 547.3 416 512L416 464L368 464L368 512C368 520.8 360.8 528 352 528zM288 368C279.2 368 272 360.8 272 352L272 128C272 119.2 279.2 112 288 112L512 112C520.8 112 528 119.2 528 128L528 352C528 360.8 520.8 368 512 368L288 368zM224 352C224 387.3 252.7 416 288 416L512 416C547.3 416 576 387.3 576 352L576 128C576 92.7 547.3 64 512 64L288 64C252.7 64 224 92.7 224 128L224 352z"/>
+                    </svg>
+                </button>
             </div>
             <div class="drawer-list" id="drawer-list"></div>
         </div>
@@ -479,7 +478,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         const drawer = document.getElementById('drawer');
         const drawerList = document.getElementById('drawer-list');
         const toggleAllCheckbox = document.getElementById('toggle-all-checkbox');
-        const drawerResizer = document.getElementById('drawer-resizer');
+        const copyJsonButton = document.getElementById('btn-copy-json');
 
         let scale = 1;
         let panX = 0;
@@ -492,13 +491,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         let cardOffsetX = 0;
         let cardOffsetY = 0;
 
-        let isResizingDrawer = false;
-        let drawerWidth = 250;
-
         const GRID_SIZE = 20;
         const PADDING = 60;
-        const MIN_DRAWER_WIDTH = 200;
-        const MAX_DRAWER_WIDTH = 500;
 
         const positions = new Map();
         const dimensions = new Map();
@@ -510,11 +504,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
         function snapToGrid(value) {
             return Math.round(value / GRID_SIZE) * GRID_SIZE;
-        }
-
-        function setDrawerWidth(width) {
-            drawerWidth = Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, width));
-            document.documentElement.style.setProperty('--drawer-width', drawerWidth + 'px');
         }
 
         function init() {
@@ -543,7 +532,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 
         function buildDrawer() {
             const sorted = [...data.entities].sort((a, b) => 
-                a.displayName.localeCompare(b.displayName)
+                a.caption.localeCompare(b.caption)
             );
             
             for (const entity of sorted) {
@@ -564,8 +553,8 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                 
                 const label = document.createElement('span');
                 label.className = 'drawer-item-label';
-                label.textContent = entity.displayName;
-                label.title = entity.displayName;
+                label.textContent = entity.caption;
+                label.title = entity.caption;
                 
                 item.appendChild(checkbox);
                 item.appendChild(label);
@@ -614,9 +603,9 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
         }
 
         function renderTableBox(box, entity) {
-            const displayName = highlightText(entity.displayName, searchTerm);
+            const caption = highlightText(entity.caption, searchTerm);
             const fieldsHtml = entity.fields.map(f => {
-                const fieldName = highlightText(f.displayName, searchTerm);
+                const fieldName = highlightText(f.caption, searchTerm);
                 const fieldType = highlightText(f.type, searchTerm);
                 return \`
                     <div class="field-row">
@@ -631,8 +620,10 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             }).join('');
 
             box.innerHTML = \`
-                <button class="table-action" title="Show linked tables"><i class="fa fa-chain"></i></button>
-                <div class="table-header">\${displayName}</div>
+                <button class="table-action" title="Show linked tables"> 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1664 1664" class="icon-chain" fill="currentColor"><path d="M1456 1216q0-40-28-68l-208-208q-28-28-68-28q-42 0-72 32q3 3 19 18.5t21.5 21.5t15 19t13 25.5t3.5 27.5q0 40-28 68t-68 28q-15 0-27.5-3.5t-25.5-13t-19-15t-21.5-21.5t-18.5-19q-33 31-33 73q0 40 28 68l206 207q27 27 68 27q40 0 68-26l147-146q28-28 28-67M753 511q0-40-28-68L519 236q-28-28-68-28q-39 0-68 27L236 381q-28 28-28 67q0 40 28 68l208 208q27 27 68 27q42 0 72-31q-3-3-19-18.5T543.5 680t-15-19t-13-25.5T512 608q0-40 28-68t68-28q15 0 27.5 3.5t25.5 13t19 15t21.5 21.5t18.5 19q33-31 33-73m895 705q0 120-85 203l-147 146q-83 83-203 83q-121 0-204-85l-206-207q-83-83-83-203q0-123 88-209l-88-88q-86 88-208 88q-120 0-204-84L100 652q-84-84-84-204t85-203L248 99q83-83 203-83q121 0 204 85l206 207q83 83 83 203q0 123-88 209l88 88q86-88 208-88q120 0 204 84l208 208q84 84 84 204"/></svg>
+                </button>
+                <div class="table-header">\${caption}</div>
                 <div class="table-body">
                     \${fieldsHtml}
                 </div>
@@ -658,14 +649,14 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             if (!termLower) {
                 return false;
             }
-            if (entity.displayName.toLowerCase().includes(termLower)) {
+            if (entity.caption.toLowerCase().includes(termLower)) {
                 return true;
             }
             if (entity.name.toLowerCase().includes(termLower)) {
                 return true;
             }
             for (const field of entity.fields) {
-                if (field.displayName.toLowerCase().includes(termLower)) {
+                if (field.caption.toLowerCase().includes(termLower)) {
                     return true;
                 }
                 if (field.name.toLowerCase().includes(termLower)) {
@@ -696,7 +687,7 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
                     drawerItem.classList.toggle('search-hit', isMatch && termLower.length > 0);
                     const label = drawerItem.querySelector('.drawer-item-label');
                     if (label) {
-                        label.innerHTML = highlightText(entity.displayName, searchTerm);
+                        label.innerHTML = highlightText(entity.caption, searchTerm);
                     }
                 }
             }
@@ -1198,12 +1189,6 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mousemove', (e) => {
-                if (isResizingDrawer) {
-                    const newWidth = e.clientX;
-                    setDrawerWidth(newWidth);
-                    return;
-                }
-
                 if (draggingCard) {
                     handleCardDrag(e);
                     return;
@@ -1217,21 +1202,11 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             });
 
             document.addEventListener('mouseup', () => {
-                if (isResizingDrawer) {
-                    isResizingDrawer = false;
-                    drawer.classList.remove('resizing');
-                }
                 if (draggingCard) {
                     endCardDrag();
                 }
                 isPanning = false;
                 container.classList.remove('dragging');
-            });
-
-            drawerResizer.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                isResizingDrawer = true;
-                drawer.classList.add('resizing');
             });
 
             document.getElementById('btn-zoom-in').addEventListener('click', () => {
@@ -1255,6 +1230,32 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
             document.getElementById('search-input').addEventListener('input', (e) => {
                 updateSearch(e.target.value);
             });
+
+            copyJsonButton.addEventListener('click', async () => {
+                const jsonText = JSON.stringify(data);
+                const originalLabel = copyJsonButton.innerHTML;
+                const confirmCopy = () => {
+                    copyJsonButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="12" height="12" aria-hidden="true" focusable="false"><path fill="currentColor" d="M173.9 439.4L7.4 272.9c-9.9-9.9-9.9-26 0-35.9l35.9-35.9c9.9-9.9 26-9.9 35.9 0l94.7 94.7 259.2-259.2c9.9-9.9 26-9.9 35.9 0l35.9 35.9c9.9 9.9 9.9 26 0 35.9L209.8 439.4c-9.9 9.9-26 9.9-35.9 0z"/></svg>';
+                    setTimeout(() => {
+                        copyJsonButton.innerHTML = originalLabel;
+                    }, 1200);
+                };
+
+                try {
+                    await navigator.clipboard.writeText(jsonText);
+                    confirmCopy();
+                } catch (err) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = jsonText;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    confirmCopy();
+                }
+            });
         }
 
         function escapeHtml(str) {
@@ -1272,5 +1273,5 @@ function buildHtml(dataJson: string, title: string, subtitle: string): string {
 }
 
 function escapeHtml(str: string): string {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

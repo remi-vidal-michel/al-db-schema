@@ -1,18 +1,19 @@
-import { AlField, AlKey, AlTable } from './types';
+import { AlField, AlKey, AlTable } from "./types";
 
 export function parseAlFile(content: string, filePath: string, objectNamePrefix?: string): AlTable[] {
     const tables: AlTable[] = [];
 
     const normalizeName = buildPrefixStripper(objectNamePrefix);
 
-    const objectRegex = /\b(table|tableextension)\s+(\d+)\s+(?:"([^"]+)"|([A-Za-z_][\w]*))\s*(?:extends\s+(?:"([^"]+)"|([A-Za-z_][\w]*)))?\s*\{/gi;
+    const objectRegex =
+        /\b(table|tableextension)\s+(\d+)\s+(?:"([^"]+)"|([A-Za-z_][\w]*))\s*(?:extends\s+(?:"([^"]+)"|([A-Za-z_][\w]*)))?\s*\{/gi;
 
     let match: RegExpExecArray | null;
     while ((match = objectRegex.exec(content)) !== null) {
-        const objectType = match[1].toLowerCase() as 'table' | 'tableextension';
+        const objectType = match[1].toLowerCase() as "table" | "tableextension";
         const id = parseInt(match[2], 10);
-        const name = normalizeName(match[3] ?? match[4] ?? '');
-        const extendsTable = normalizeName(match[5] ?? match[6] ?? '');
+        const name = normalizeName(match[3] ?? match[4] ?? "");
+        const extendsTable = normalizeName(match[5] ?? match[6] ?? "");
 
         const bodyStart = match.index + match[0].length;
         const body = extractBalancedBlock(content, bodyStart);
@@ -21,10 +22,10 @@ export function parseAlFile(content: string, filePath: string, objectNamePrefix?
         const fields = parseFields(body, normalizeName, objectNamePrefix);
         const keys = parseKeys(body, normalizeName);
 
-        const pkKey = keys.find(k => k.isPrimaryKey);
+        const pkKey = keys.find((k) => k.isPrimaryKey);
         if (pkKey) {
             for (const f of fields) {
-                if (pkKey.fields.some(kf => kf.toLowerCase() === f.name.toLowerCase())) {
+                if (pkKey.fields.some((kf) => kf.toLowerCase() === f.name.toLowerCase())) {
                     f.isPrimaryKey = true;
                 }
             }
@@ -57,20 +58,16 @@ export function parseAlFile(content: string, filePath: string, objectNamePrefix?
 function extractTableCaption(body: string): string {
     const fieldsStart = body.search(/\bfields\s*\{/i);
     const topLevel = fieldsStart > 0 ? body.substring(0, fieldsStart) : body.substring(0, 500);
-    
+
     const captionMatch = /\bCaption\s*=\s*'((?:[^']|'')*)'/i.exec(topLevel);
     if (captionMatch) {
         return captionMatch[1].replace(/''/g, "'");
     }
-    
-    return '';
+
+    return "";
 }
 
-function parseFields(
-    body: string,
-    normalizeName: (value: string) => string,
-    objectNamePrefix?: string
-): AlField[] {
+function parseFields(body: string, normalizeName: (value: string) => string, objectNamePrefix?: string): AlField[] {
     const fields: AlField[] = [];
 
     const fieldsBlockMatch = /\bfields\s*\{/i.exec(body);
@@ -85,17 +82,17 @@ function parseFields(
 
     while ((fm = fieldRegex.exec(fieldsBody)) !== null) {
         const fieldId = parseInt(fm[1], 10);
-        const fieldName = normalizeName((fm[2] ?? fm[3] ?? '').trim());
+        const fieldName = normalizeName((fm[2] ?? fm[3] ?? "").trim());
         const fieldType = fm[4].trim();
 
         const afterField = fieldsBody.substring(fm.index + fm[0].length);
         const fieldBody = extractFieldBody(afterField);
 
-        const caption = normalizeName(extractProperty(fieldBody, 'Caption'));
-        const fieldClass = extractProperty(fieldBody, 'FieldClass') || 'Normal';
+        const caption = normalizeName(extractProperty(fieldBody, "Caption"));
+        const fieldClass = extractProperty(fieldBody, "FieldClass") || "Normal";
         const tableRelation = extractTableRelation(fieldBody, objectNamePrefix);
 
-        if (fieldClass.toLowerCase() === 'flowfield' || fieldClass.toLowerCase() === 'flowfilter') {
+        if (fieldClass.toLowerCase() === "flowfield" || fieldClass.toLowerCase() === "flowfilter") {
             continue;
         }
 
@@ -108,8 +105,8 @@ function parseFields(
             tableRelation,
             isPrimaryKey: false,
             isForeignKey: false,
-            relatedTable: '',
-            relatedField: '',
+            relatedTable: "",
+            relatedField: "",
         });
     }
 
@@ -118,8 +115,8 @@ function parseFields(
 
 function extractFieldBody(afterField: string): string {
     const trimmed = afterField.trimStart();
-    if (!trimmed.startsWith('{')) {
-        return '';
+    if (!trimmed.startsWith("{")) {
+        return "";
     }
     return extractBalancedBlock(trimmed, 1);
 }
@@ -139,7 +136,7 @@ function parseKeys(body: string, normalizeName: (value: string) => string): AlKe
     let isFirst = true;
 
     while ((km = keyRegex.exec(keysBody)) !== null) {
-        const keyName = normalizeName((km[1] ?? km[2] ?? '').trim().replace(/^"|"$/g, ''));
+        const keyName = normalizeName((km[1] ?? km[2] ?? "").trim().replace(/^"|"$/g, ""));
         const keyFields = parseKeyFields(km[3]).map(normalizeName);
 
         keys.push({
@@ -158,7 +155,10 @@ function parseKeyFields(raw: string): string[] {
     const regex = /"([^"]+)"|([^,]+)/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(raw)) !== null) {
-        const value = (match[1] ?? match[2] ?? '').trim();
+        let value = (match[1] ?? match[2] ?? "").trim();
+        if (value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length - 1).trim();
+        }
         if (value) {
             fields.push(value);
         }
@@ -167,53 +167,53 @@ function parseKeyFields(raw: string): string[] {
 }
 
 function extractProperty(fieldBody: string, propertyName: string): string {
-    const regex = new RegExp(`\\b${propertyName}\\s*=\\s*'((?:[^']|'')*)'`, 'i');
+    const regex = new RegExp(`\\b${propertyName}\\s*=\\s*'((?:[^']|'')*)'`, "i");
     const match = regex.exec(fieldBody);
     if (match) {
         return match[1].replace(/''/g, "'");
     }
 
-    const regex2 = new RegExp(`\\b${propertyName}\\s*=\\s*([^;]+);`, 'i');
+    const regex2 = new RegExp(`\\b${propertyName}\\s*=\\s*([^;]+);`, "i");
     const match2 = regex2.exec(fieldBody);
     if (match2) {
         return match2[1].trim();
     }
 
-    return '';
+    return "";
 }
 
 function extractTableRelation(fieldBody: string, objectNamePrefix?: string): string {
     const regex = /\bTableRelation\s*=\s*([\s\S]*?);/i;
     const match = regex.exec(fieldBody);
     if (match) {
-        const normalized = match[1].replace(/\s+/g, ' ').trim();
+        const normalized = match[1].replace(/\s+/g, " ").trim();
         if (!objectNamePrefix) {
             return normalized;
         }
         const strip = buildPrefixStripper(objectNamePrefix);
         return normalized.replace(/"([^"]+)"/g, (_, name) => `"${strip(name)}"`);
     }
-    return '';
+    return "";
 }
 
 function resolveTableRelation(raw: string, normalizeName: (value: string) => string): { table: string; field: string } {
     if (!raw) {
-        return { table: '', field: '' };
+        return { table: "", field: "" };
     }
 
-    let cleaned = raw.replace(/\b(WHERE|IF)\b[\s\S]*/i, '').trim();
+    let cleaned = raw.replace(/\b(WHERE|IF)\b[\s\S]*/i, "").trim();
 
     const tableMatch = /^"([^"]+)"/.exec(cleaned);
     if (!tableMatch) {
         const unquoted = /^(\w+)/.exec(cleaned);
-        return { table: normalizeName(unquoted ? unquoted[1] : raw), field: '' };
+        return { table: normalizeName(unquoted ? unquoted[1] : raw), field: "" };
     }
 
     const table = normalizeName(tableMatch[1]);
     cleaned = cleaned.substring(tableMatch[0].length).trim();
 
-    let field = '';
-    if (cleaned.startsWith('.')) {
+    let field = "";
+    if (cleaned.startsWith(".")) {
         cleaned = cleaned.substring(1);
         const fieldMatch = /^"([^"]+)"/.exec(cleaned);
         if (fieldMatch) {
@@ -246,7 +246,7 @@ function extractBalancedBlock(content: string, startAfterBrace: number): string 
     let depth = 1;
     let i = startAfterBrace;
     let inString = false;
-    let stringChar = '';
+    let stringChar = "";
 
     while (i < content.length && depth > 0) {
         const ch = content[i];
@@ -256,15 +256,15 @@ function extractBalancedBlock(content: string, startAfterBrace: number): string 
                 inString = false;
             }
         } else {
-            if (ch === '\'' || ch === '"') {
+            if (ch === "'" || ch === '"') {
                 inString = true;
                 stringChar = ch;
-            } else if (ch === '{') {
+            } else if (ch === "{") {
                 depth++;
-            } else if (ch === '}') {
+            } else if (ch === "}") {
                 depth--;
-            } else if (ch === '/' && i + 1 < content.length && content[i + 1] === '/') {
-                const eol = content.indexOf('\n', i);
+            } else if (ch === "/" && i + 1 < content.length && content[i + 1] === "/") {
+                const eol = content.indexOf("\n", i);
                 i = eol === -1 ? content.length : eol;
             }
         }
