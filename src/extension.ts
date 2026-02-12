@@ -59,10 +59,16 @@ export function activate(context: vscode.ExtensionContext) {
                 const panel = vscode.window.createWebviewPanel("alDbSchema", title, vscode.ViewColumn.One, {
                     enableScripts: true,
                     retainContextWhenHidden: true,
+                    localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "src")],
                 });
 
-                const html = generateDiagramHtml(scanResult, title, subtitle);
-                panel.webview.html = html;
+                panel.webview.html = generateDiagramHtml(
+                    panel.webview,
+                    context.extensionUri,
+                    scanResult,
+                    title,
+                    subtitle,
+                );
 
                 if (scanResult.errors.length > 0) {
                     const channel = vscode.window.createOutputChannel("AL DB Schema");
