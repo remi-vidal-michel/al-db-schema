@@ -2,7 +2,10 @@
   "name": "al-db-schema",
   "displayName": "AL DB Schema",
   "description": "Generate DB schemas from yours Business Central AL projects inside VSCode",
-  "repository": {"type": "git", "url": "https://github.com/remi-vidal-michel/al-db-schema"},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remi-vidal-michel/al-db-schema"
+  },
   "icon": "images/icon.png",
   "version": "0.4.0",
   "engines": {
@@ -30,13 +33,16 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.109.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.54.0",
+    "@types/vscode": "^1.109.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.54.0"
+  },
+  "dependencies": {
+    "elkjs": "^0.11.0"
   }
 }

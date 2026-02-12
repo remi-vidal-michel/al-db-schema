@@ -59,7 +59,10 @@ export function activate(context: vscode.ExtensionContext) {
                 const panel = vscode.window.createWebviewPanel("alDbSchema", title, vscode.ViewColumn.One, {
                     enableScripts: true,
                     retainContextWhenHidden: true,
-                    localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "src")],
+                    localResourceRoots: [
+                        vscode.Uri.joinPath(context.extensionUri, "src"),
+                        vscode.Uri.joinPath(context.extensionUri, "node_modules", "elkjs", "lib"),
+                    ],
                 });
 
                 panel.webview.html = generateDiagramHtml(
