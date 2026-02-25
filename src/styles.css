@@ -91,6 +91,10 @@ body {
     cursor: pointer;
     border-radius: 3px;
     font-size: 12px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .toolbar-controls button:hover,
 .btn:hover {
@@ -99,6 +103,18 @@ body {
 .btn-icon {
     padding: 5px 8px;
     font-size: 14px;
+}
+.zoom-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+#btn-fit-view {
+    font-size: 18px;
 }
 .zoom-label {
     font-size: 11px;
@@ -171,7 +187,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
+    width: 24px;
     height: 24px;
     padding: 0;
     font-size: 12px;
@@ -218,6 +234,7 @@ body {
     position: relative;
     overflow: hidden;
     cursor: grab;
+    background-color: var(--drawer-bg);
     background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
     background-size: 20px 20px;
 }
@@ -243,12 +260,18 @@ body {
     border: 1px solid var(--table-border);
     border-radius: 6px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    min-width: 200px;
-    max-width: 320px;
+    width: 280px;
     overflow: hidden;
     pointer-events: auto;
     cursor: move;
     user-select: none;
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
+}
+.table-box:hover { z-index: 11; }
+.table-box.dimmed { opacity: 0.25; }
+.table-box.highlighted { 
+    box-shadow: 0 0 0 2px #4299e1, 0 8px 24px rgba(0, 0, 0, 0.5) !important; 
+    z-index: 20; 
 }
 .table-box.dragging-card {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -324,6 +347,9 @@ body {
     gap: 3px;
     flex-shrink: 0;
 }
+.field-badges:empty {
+    display: none;
+}
 .badge {
     font-size: 9px;
     font-weight: 700;
@@ -360,6 +386,15 @@ body {
     stroke-width: 2;
     opacity: 0.7;
     pointer-events: stroke;
+    stroke-linecap: round;
+    transition: opacity 0.2s, stroke 0.2s, stroke-width 0.2s;
+    cursor: pointer;
+}
+.relation-line.dimmed { opacity: 0.15; }
+.relation-line.highlighted { 
+    stroke: #ffd700; 
+    stroke-width: 3; 
+    opacity: 1; 
 }
 .relation-line:hover {
     opacity: 1;

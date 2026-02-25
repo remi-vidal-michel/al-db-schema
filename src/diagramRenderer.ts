@@ -56,9 +56,10 @@ export function generateDiagramHtml(
         </div>
         <div class="toolbar-controls">
             <button id="btn-auto" title="Auto layout">Auto</button>
-            <button id="btn-zoom-out">−</button>
+            <button class="zoom-btn" id="btn-zoom-out">−</button>
             <span class="zoom-label" id="zoom-label">100%</span>
-            <button id="btn-zoom-in">+</button>
+            <button class="zoom-btn" id="btn-zoom-in">+</button>
+            <button class="zoom-btn" id="btn-fit-view" title="Centrer">⛶</button>
         </div>
     </div>
     <div class="main-container">

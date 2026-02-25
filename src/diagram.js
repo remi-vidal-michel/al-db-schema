@@ -83,6 +83,83 @@
         box.innerHTML = `<button class="table-action" title="Show linked tables"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1664 1664" class="icon-chain" fill="currentColor"><path d="M1456 1216q0-40-28-68l-208-208q-28-28-68-28q-42 0-72 32q3 3 19 18.5t21.5 21.5t15 19t13 25.5t3.5 27.5q0 40-28 68t-68 28q-15 0-27.5-3.5t-25.5-13t-19-15t-21.5-21.5t-18.5-19q-33 31-33 73q0 40 28 68l206 207q27 27 68 27q40 0 68-26l147-146q28-28 28-67M753 511q0-40-28-68L519 236q-28-28-68-28q-39 0-68 27L236 381q-28 28-28 67q0 40 28 68l208 208q27 27 68 27q42 0 72-31q-3-3-19-18.5T543.5 680t-15-19t-13-25.5T512 608q0-40 28-68t68-28q15 0 27.5 3.5t25.5 13t19 15t21.5 21.5t18.5 19q33-31 33-73m895 705q0 120-85 203l-147 146q-83 83-203 83q-121 0-204-85l-206-207q-83-83-83-203q0-123 88-209l-88-88q-86 88-208 88q-120 0-204-84L100 652q-84-84-84-204t85-203L248 99q83-83 203-83q121 0 204 85l206 207q83 83 83 203q0 123-88 209l88 88q86-88 208-88q120 0 204 84l208 208q84 84 84 204"/></svg></button><div class="table-header">${hl(e.caption, search)}</div><div class="table-body">${rows}</div>`;
     }
 
+    function highlightContext(tableName) {
+        if (panning || dragKey) return;
+        const connectedTables = new Set([tableName]);
+        
+        for (const n of adj.get(tableName) || []) connectedTables.add(n);
+
+        for (const [key, box] of boxes.entries()) {
+            if (connectedTables.has(key)) {
+                box.classList.add('highlighted');
+                box.classList.remove('dimmed');
+            } else {
+                box.classList.add('dimmed');
+                box.classList.remove('highlighted');
+            }
+        }
+
+        if (svg) {
+            const lines = svg.querySelectorAll('.relation-line');
+            lines.forEach(line => {
+                if (line.dataset.from === tableName || line.dataset.to === tableName) {
+                    line.classList.add('highlighted');
+                    line.classList.remove('dimmed');
+                    line.setAttribute('marker-end', 'url(#arrow-highlighted)');
+                    line.parentNode.appendChild(line);
+                } else {
+                    line.classList.add('dimmed');
+                    line.classList.remove('highlighted');
+                    line.setAttribute('marker-end', 'url(#arrow)');
+                }
+            });
+        }
+    }
+
+    function highlightRelation(fromName, toName) {
+        if (panning || dragKey) return;
+        const connectedTables = new Set([fromName, toName]);
+
+        for (const [key, box] of boxes.entries()) {
+            if (connectedTables.has(key)) {
+                box.classList.add('highlighted');
+                box.classList.remove('dimmed');
+            } else {
+                box.classList.add('dimmed');
+                box.classList.remove('highlighted');
+            }
+        }
+
+        if (svg) {
+            const lines = svg.querySelectorAll('.relation-line');
+            lines.forEach(line => {
+                if (line.dataset.from === fromName && line.dataset.to === toName) {
+                    line.classList.add('highlighted');
+                    line.classList.remove('dimmed');
+                    line.setAttribute('marker-end', 'url(#arrow-highlighted)');
+                    line.parentNode.appendChild(line);
+                } else {
+                    line.classList.add('dimmed');
+                    line.classList.remove('highlighted');
+                    line.setAttribute('marker-end', 'url(#arrow)');
+                }
+            });
+        }
+    }
+
+    function resetHighlight() {
+        for (const box of boxes.values()) {
+            box.classList.remove('highlighted', 'dimmed');
+        }
+        if (svg) {
+            const lines = svg.querySelectorAll('.relation-line');
+            lines.forEach(line => {
+                line.classList.remove('highlighted', 'dimmed');
+                line.setAttribute('marker-end', 'url(#arrow)');
+            });
+        }
+    }
+
     function createBoxes() {
         for (const e of data.entities) {
             const key = e.name.toLowerCase();
@@ -96,6 +173,8 @@
             box.addEventListener("click", (ev) => {
                 if (ev.target.closest(".table-action")) { ev.preventDefault(); ev.stopPropagation(); showLinked(key); }
             });
+            box.addEventListener("mouseenter", () => highlightContext(key));
+            box.addEventListener("mouseleave", resetHighlight);
             viewport.appendChild(box);
             boxes.set(key, box);
             dims.set(key, { w: box.offsetWidth, h: box.offsetHeight, entity: e });
@@ -278,7 +357,16 @@
 
     function placeOnGrid(grid) {
         const placed = new Set();
+        
+        const degreeMap = {};
+        data.entities.forEach(e => {
+            degreeMap[e.name] = data.relations.filter(r => r.from === e.name || r.to === e.name).length;
+        });
+
         const sorted = [...data.entities].sort((a, b) => {
+            const degDiff = degreeMap[b.name] - degreeMap[a.name];
+            if (degDiff !== 0) return degDiff;
+
             const pa = grid[a.name], pb = grid[b.name];
             return (pa.fx * pa.fx + pa.fy * pa.fy) - (pb.fx * pb.fx + pb.fy * pb.fy);
         });
@@ -406,12 +494,13 @@
         svg.setAttribute("width", String(mx + PAD * 2));
         svg.setAttribute("height", String(my + PAD * 2));
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        defs.innerHTML = '<marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#4299e1" /></marker>';
+        defs.innerHTML = '<marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#4299e1" /></marker><marker id="arrow-highlighted" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ffd700" /></marker>';
         svg.appendChild(defs);
 
         const drawn = new Set();
         for (const r of data.relations) {
             const fk = r.from.toLowerCase(), tk = r.to.toLowerCase();
+            if (fk === tk) continue; // Hide self-referencing relations
             if (!vis.get(fk) || !vis.get(tk)) continue;
             const dk = `${fk}|${tk}`;
             if (drawn.has(dk)) continue;
@@ -419,14 +508,13 @@
             const fp = positions.get(fk), tp = positions.get(tk);
             if (!fp || !tp) continue;
             const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            if (fk === tk) {
-                const x = fp.x + fp.w, y = fp.y + fp.h / 2;
-                el.setAttribute("d", `M ${x} ${y} C ${x + 60} ${y - 60}, ${x + 60} ${y + 60}, ${x} ${y + 20}`);
-            } else {
-                el.setAttribute("d", linkPath(fp, tp));
-            }
+            el.setAttribute("d", linkPath(fp, tp));
             el.setAttribute("class", "relation-line");
             el.setAttribute("marker-end", "url(#arrow)");
+            el.dataset.from = fk;
+            el.dataset.to = tk;
+            el.addEventListener('mouseenter', () => highlightRelation(fk, tk));
+            el.addEventListener('mouseleave', resetHighlight);
             svg.appendChild(el);
         }
         viewport.insertBefore(svg, viewport.firstChild);
@@ -478,7 +566,7 @@
     function updateXform() {
         viewport.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
         container.style.backgroundPosition = `${panX}px ${panY}px`;
-        container.style.backgroundSize = `${20 * scale}px ${20 * scale}px`;
+        container.style.backgroundSize = `20px 20px`;
         zoomLabel.textContent = Math.round(scale * 100) + "%";
     }
 
@@ -543,6 +631,7 @@
         document.addEventListener("mouseup", () => { endDrag(); panning = false; container.classList.remove("dragging"); });
         $("btn-zoom-in").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(0.2, r.left + r.width / 2, r.top + r.height / 2); });
         $("btn-zoom-out").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(-0.2, r.left + r.width / 2, r.top + r.height / 2); });
+        $("btn-fit-view").addEventListener("click", fitView);
         
         // Remplacement de autoLayout par recalculateLayout
         $("btn-auto").addEventListener("click", recalculateLayout);
