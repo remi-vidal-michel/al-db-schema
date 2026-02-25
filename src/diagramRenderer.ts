@@ -33,7 +33,6 @@ export function generateDiagramHtml(
 ): string {
     const data = prepareDiagramData(scanResult);
     const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "src", "styles.css"));
-    const elkUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "node_modules", "elkjs", "lib", "elk.bundled.js"));
     const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "src", "diagram.js"));
     const nonce = getNonce();
     const t = escapeHtml(title);
@@ -81,7 +80,6 @@ export function generateDiagramHtml(
         </div>
     </div>
     <script nonce="${nonce}">window.__DIAGRAM_DATA__ = ${JSON.stringify(data)};</script>
-    <script nonce="${nonce}" src="${elkUri}"></script>
     <script nonce="${nonce}" src="${jsUri}"></script>
 </body>
 </html>`;

@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     "use strict";
 
     const $ = (id) => document.getElementById(id);
@@ -11,7 +11,6 @@
     const copyJsonBtn = $("btn-copy-json");
 
     const data = window.__DIAGRAM_DATA__;
-    const elk = new ELK();
     const positions = new Map();
     const dims = new Map();
     const vis = new Map();
@@ -25,6 +24,11 @@
     let dragKey = null, dragOX = 0, dragOY = 0;
 
     const GRID = 20, PAD = 60;
+    const COL_W = 380;
+    const STEP_Y = 20;
+    const PAD_Y = 40;
+    const TABLE_W = 280;
+    
     const snap = (v) => Math.round(v / GRID) * GRID;
 
     const esc = (s) =>
@@ -98,6 +102,16 @@
         }
     }
 
+    function placeBoxes() {
+        for (const [key, pos] of positions.entries()) {
+            const box = boxes.get(key);
+            if (box) {
+                box.style.left = pos.x + "px";
+                box.style.top = pos.y + "px";
+            }
+        }
+    }
+
     function matches(e, t) {
         if (!t) return false;
         if (e.caption.toLowerCase().includes(t) || e.name.toLowerCase().includes(t)) return true;
@@ -126,7 +140,14 @@
     function setVis(key, show) {
         vis.set(key, show);
         const box = boxes.get(key);
-        if (box) box.classList.toggle("hidden", !show);
+        if (box) {
+            box.classList.toggle("hidden", !show);
+            // FIX : Mettre à jour la hauteur réelle quand on affiche la table pour centrer le lien
+            if (show && box.offsetHeight > 0) {
+                const d = dims.get(key);
+                if (d) d.h = box.offsetHeight;
+            }
+        }
         drawLinks();
     }
 
@@ -135,7 +156,13 @@
         for (const key of vis.keys()) {
             vis.set(key, next);
             const b = boxes.get(key);
-            if (b) b.classList.toggle("hidden", !next);
+            if (b) {
+                b.classList.toggle("hidden", !next);
+                if (next && b.offsetHeight > 0) {
+                    const d = dims.get(key);
+                    if (d) d.h = b.offsetHeight;
+                }
+            }
         }
         drawerList.querySelectorAll(".drawer-item").forEach((i) => {
             i.classList.toggle("hidden-table", !next);
@@ -151,72 +178,219 @@
         for (const k of linked) {
             vis.set(k, true);
             const b = boxes.get(k);
-            if (b) b.classList.remove("hidden");
+            if (b) {
+                b.classList.remove("hidden");
+                const d = dims.get(k);
+                if (d && b.offsetHeight > 0) d.h = b.offsetHeight;
+            }
             const di = drawerList.querySelector(`.drawer-item[data-entity="${k}"]`);
             if (di) { di.classList.remove("hidden-table"); const cb = di.querySelector("input"); if (cb) cb.checked = true; }
         }
         syncAll();
-        autoLayout();
+        // FIX : On force le recalcul complet pour que les nouvelles tables trouvent leur place sans chevauchement
+        recalculateLayout();
     }
 
-    function buildElkGraph(allowedKeys) {
-        const set = allowedKeys ? new Set(allowedKeys) : null;
-        const ents = set ? data.entities.filter((e) => set.has(e.name.toLowerCase())) : data.entities;
-        const entSet = new Set(ents.map((e) => e.name.toLowerCase()));
+    // --- MOTEUR PHYSIQUE & GRILLE ---
+    function runPhysicsSimulation(grid) {
+        for (let i = 0; i < 250; i++) {
+            for (const e1 of data.entities) {
+                for (const e2 of data.entities) {
+                    if (e1 === e2) continue;
+                    const p1 = grid[e1.name], p2 = grid[e2.name];
+                    const dx = p1.fx - p2.fx, dy = p1.fy - p2.fy;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    if (dist < 1500) {
+                        const force = 600000 / (dist * dist);
+                        p1.vx += (dx / dist) * force;
+                        p1.vy += (dy / dist) * force;
+                    }
+                }
+            }
+            for (const r of data.relations) {
+                if (r.from === r.to) continue;
+                const p1 = grid[r.from], p2 = grid[r.to];
+                if (!p1 || !p2) continue;
+                const dx = p2.fx - p1.fx, dy = p2.fy - p1.fy;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const force = (dist - 350) * 0.05;
+                p1.vx += (dx / dist) * force;
+                p1.vy += (dy / dist) * force;
+                p2.vx -= (dx / dist) * force;
+                p2.vy -= (dy / dist) * force;
+            }
+            for (const e of data.entities) {
+                const p = grid[e.name];
+                const d = Math.sqrt(p.fx * p.fx + p.fy * p.fy) || 1;
+                p.vx -= (p.fx / d) * 0.3;
+                p.vy -= (p.fy / d) * 0.3;
+                p.fx += p.vx;
+                p.fy += p.vy;
+                p.vx *= 0.5;
+                p.vy *= 0.5;
+            }
+        }
+    }
 
-        const children = ents.map((e) => {
+    function ccw(A, B, C) { return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x); }
+    function segmentsIntersect(A, B, C, D) { return ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D); }
+
+    function lineIntersectsBox(x1, y1, x2, y2, bx, by, bw, bh) {
+        const A = { x: x1, y: y1 }, B = { x: x2, y: y2 };
+        const p = 15;
+        const r = [
+            { x: bx - p, y: by - p }, { x: bx + bw + p, y: by - p },
+            { x: bx + bw + p, y: by + bh + p }, { x: bx - p, y: by + bh + p }
+        ];
+        if (segmentsIntersect(A, B, r[0], r[1])) return true;
+        if (segmentsIntersect(A, B, r[1], r[2])) return true;
+        if (segmentsIntersect(A, B, r[2], r[3])) return true;
+        if (segmentsIntersect(A, B, r[3], r[0])) return true;
+        return x1 >= r[0].x && x1 <= r[1].x && y1 >= r[0].y && y1 <= r[2].y;
+    }
+
+    function checkCollision(x, y, w, h, name, grid, placed) {
+        const box = { x: x - 20, y: y - PAD_Y / 2, w: w + 40, h: h + PAD_Y };
+        for (const pn of placed) {
+            if (pn === name) continue;
+            const pb = grid[pn].box;
+            if (box.x < pb.x + pb.w && box.x + box.w > pb.x && box.y < pb.y + pb.h && box.y + box.h > pb.y) return true;
+        }
+        const cx = x + w / 2, cy = y + h / 2;
+        for (const r of data.relations) {
+            if (r.from === r.to) continue;
+            const p1 = grid[r.from], p2 = grid[r.to];
+            if (p1?.isPlaced && p2?.isPlaced && r.from !== name && r.to !== name) {
+                if (lineIntersectsBox(p1.x + p1.estW / 2, p1.y + p1.estH / 2, p2.x + p2.estW / 2, p2.y + p2.estH / 2, x, y, w, h)) return true;
+            }
+            if ((r.from === name && p2?.isPlaced) || (r.to === name && p1?.isPlaced)) {
+                const other = r.from === name ? p2 : p1;
+                for (const pn of placed) {
+                    if (pn !== r.from && pn !== r.to && pn !== name) {
+                        const pp = grid[pn];
+                        if (lineIntersectsBox(cx, cy, other.x + other.estW / 2, other.y + other.estH / 2, pp.x, pp.y, pp.estW, pp.estH)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    function placeOnGrid(grid) {
+        const placed = new Set();
+        const sorted = [...data.entities].sort((a, b) => {
+            const pa = grid[a.name], pb = grid[b.name];
+            return (pa.fx * pa.fx + pa.fy * pa.fy) - (pb.fx * pb.fx + pb.fy * pb.fy);
+        });
+        for (const entity of sorted) {
+            const p = grid[entity.name];
+            const col = Math.round(p.fx / COL_W);
+            const ty = Math.round(p.fy / STEP_Y) * STEP_Y;
+            let done = false;
+            for (let r = 0; !done && r < 200; r++) {
+                for (let dc = -r; !done && dc <= r; dc++) {
+                    for (let dy = -r; dy <= r; dy++) {
+                        if (Math.abs(dc) !== r && Math.abs(dy) !== r) continue;
+                        const x = (col + dc) * COL_W;
+                        const y = ty + dy * STEP_Y;
+                        if (!checkCollision(x, y, p.estW, p.estH, entity.name, grid, placed)) {
+                            p.x = x; p.y = y;
+                            p.box = { x: x - 20, y: y - PAD_Y / 2, w: p.estW + 40, h: p.estH + PAD_Y };
+                            p.isPlaced = true;
+                            placed.add(entity.name);
+                            done = true;
+                        }
+                    }
+                }
+            }
+        }
+        return placed;
+    }
+
+    function compact(grid, placed) {
+        let moved = true, iter = 0;
+        while (moved && iter < 150) {
+            moved = false;
+            iter++;
+            const ordered = [...data.entities].sort((a, b) => {
+                const pa = grid[a.name], pb = grid[b.name];
+                return (pb.x * pb.x + pb.y * pb.y) - (pa.x * pa.x + pa.y * pa.y);
+            });
+            for (const entity of ordered) {
+                const p = grid[entity.name];
+                placed.delete(entity.name);
+                let tx = 0, ty = 0, cnt = 0;
+                for (const r of data.relations) {
+                    if (r.from === entity.name && grid[r.to]?.isPlaced) { tx += grid[r.to].x; ty += grid[r.to].y; cnt++; }
+                    if (r.to === entity.name && grid[r.from]?.isPlaced) { tx += grid[r.from].x; ty += grid[r.from].y; cnt++; }
+                }
+                if (cnt > 0) { tx /= cnt; ty /= cnt; }
+                let dc = 0, dy = 0;
+                if (Math.abs(tx - p.x) >= COL_W) dc = Math.sign(tx - p.x) * COL_W;
+                if (Math.abs(ty - p.y) >= STEP_Y) dy = Math.sign(ty - p.y) * STEP_Y;
+                let localMoved = false;
+                if (dc !== 0 && dy !== 0 && !checkCollision(p.x + dc, p.y + dy, p.estW, p.estH, entity.name, grid, placed)) {
+                    p.x += dc; p.y += dy; localMoved = true;
+                } else if (dc !== 0 && !checkCollision(p.x + dc, p.y, p.estW, p.estH, entity.name, grid, placed)) {
+                    p.x += dc; localMoved = true;
+                } else if (dy !== 0 && !checkCollision(p.x, p.y + dy, p.estW, p.estH, entity.name, grid, placed)) {
+                    p.y += dy; localMoved = true;
+                }
+                p.box = { x: p.x - 20, y: p.y - PAD_Y / 2, w: p.estW + 40, h: p.estH + PAD_Y };
+                placed.add(entity.name);
+                if (localMoved) moved = true;
+            }
+        }
+    }
+
+    function calculateLayout() {
+        const grid = {};
+        const n = data.entities.length;
+        
+        // Sécurité : On s'assure que les dims sont à jour (ex: si une table vient d'être affichée)
+        for (const [key, box] of boxes.entries()) {
+            if (!box.classList.contains("hidden") && box.offsetHeight > 0) {
+                const d = dims.get(key);
+                if (d) { d.w = box.offsetWidth; d.h = box.offsetHeight; }
+            }
+        }
+
+        data.entities.forEach((e, i) => {
+            const a = (i / n) * Math.PI * 2;
             const key = e.name.toLowerCase();
             const d = dims.get(key);
-            return { id: key, width: d ? d.w : 220, height: d ? d.h : 100 };
+            grid[e.name] = {
+                fx: Math.cos(a) * 400, fy: Math.sin(a) * 400,
+                vx: 0, vy: 0,
+                estW: d ? d.w : TABLE_W, 
+                estH: d ? d.h : 45 + (e.fields ? e.fields.length : 0) * 29,
+                isPlaced: false, x: 0, y: 0, box: null,
+            };
         });
 
-        const seen = new Set();
-        const edges = [];
-        for (const r of data.relations) {
-            const fk = r.from.toLowerCase(), tk = r.to.toLowerCase();
-            if (!entSet.has(fk) || !entSet.has(tk)) continue;
-            const dk = `${fk}|${tk}`;
-            if (seen.has(dk)) continue;
-            seen.add(dk);
-            edges.push({ id: dk, sources: [fk], targets: [tk] });
-        }
+        runPhysicsSimulation(grid);
+        const placed = placeOnGrid(grid);
+        compact(grid, placed);
 
-        return {
-            id: "root",
-            layoutOptions: {
-                "elk.algorithm": "layered",
-                "elk.direction": "RIGHT",
-                "elk.spacing.nodeNode": "40",
-                "elk.layered.spacing.nodeNodeBetweenLayers": "60",
-                "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-                "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-                "elk.padding": "[top=60,left=60,bottom=60,right=60]",
-                "elk.layered.mergeEdges": "true",
-            },
-            children,
-            edges,
-        };
+        let minX = Infinity, minY = Infinity;
+        for (const e of data.entities) { minX = Math.min(minX, grid[e.name].x); minY = Math.min(minY, grid[e.name].y); }
+        const offX = PAD - minX, offY = PAD - minY;
+
+        data.entities.forEach((e) => {
+            const key = e.name.toLowerCase();
+            const p = grid[e.name];
+            const nx = p.x + offX, ny = p.y + offY;
+            const d = dims.get(key);
+            positions.set(key, { x: nx, y: ny, w: d ? d.w : p.estW, h: d ? d.h : p.estH });
+        });
     }
 
-    async function layout(allowedKeys) {
-        const graph = buildElkGraph(allowedKeys);
-        if (!graph.children.length) return;
-
-        const result = await elk.layout(graph);
-
-        for (const node of result.children || []) {
-            const x = snap((node.x || 0) + PAD);
-            const y = snap((node.y || 0) + PAD);
-            const d = dims.get(node.id);
-            positions.set(node.id, { x, y, w: d ? d.w : node.width, h: d ? d.h : node.height });
-            const box = boxes.get(node.id);
-            if (box) { box.style.left = x + "px"; box.style.top = y + "px"; }
-        }
-    }
-
-    async function autoLayout() {
-        const visibleKeys = Array.from(vis.entries()).filter(([, v]) => v).map(([k]) => k);
-        await layout(visibleKeys);
+    // --- MISE À JOUR : Fusion de recalculateLayout et autoLayout ---
+    // C'est cette fonction qui gère tout le flux de rafraîchissement
+    function recalculateLayout() {
+        positions.clear();
+        calculateLayout();
+        placeBoxes(); // L'appel crucial qui manquait à autoLayout pour déplacer le HTML !
         drawLinks();
         fitView();
     }
@@ -245,7 +419,12 @@
             const fp = positions.get(fk), tp = positions.get(tk);
             if (!fp || !tp) continue;
             const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            el.setAttribute("d", linkPath(fp, tp));
+            if (fk === tk) {
+                const x = fp.x + fp.w, y = fp.y + fp.h / 2;
+                el.setAttribute("d", `M ${x} ${y} C ${x + 60} ${y - 60}, ${x + 60} ${y + 60}, ${x} ${y + 20}`);
+            } else {
+                el.setAttribute("d", linkPath(fp, tp));
+            }
             el.setAttribute("class", "relation-line");
             el.setAttribute("marker-end", "url(#arrow)");
             svg.appendChild(el);
@@ -281,8 +460,8 @@
     function onDrag(e) {
         if (!dragKey) return;
         const rect = container.getBoundingClientRect(), pos = positions.get(dragKey);
-        pos.x = Math.max(PAD, snap((e.clientX - rect.left - panX) / scale - dragOX));
-        pos.y = Math.max(PAD, snap((e.clientY - rect.top - panY) / scale - dragOY));
+        pos.x = Math.max(0, snap((e.clientX - rect.left - panX) / scale - dragOX));
+        pos.y = Math.max(0, snap((e.clientY - rect.top - panY) / scale - dragOY));
         const box = boxes.get(dragKey);
         box.style.left = pos.x + "px";
         box.style.top = pos.y + "px";
@@ -298,18 +477,29 @@
 
     function updateXform() {
         viewport.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        container.style.backgroundPosition = `${panX}px ${panY}px`;
+        container.style.backgroundSize = `${20 * scale}px ${20 * scale}px`;
         zoomLabel.textContent = Math.round(scale * 100) + "%";
     }
 
     function fitView() {
-        let mx = 0, my = 0;
-        for (const [k, p] of positions.entries())
-            if (vis.get(k)) { mx = Math.max(mx, p.x + p.w + PAD); my = Math.max(my, p.y + p.h + PAD); }
-        if (!mx || !my) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let hasVisible = false;
+        for (const [k, p] of positions.entries()) {
+            if (!vis.get(k)) continue;
+            hasVisible = true;
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x + p.w);
+            maxY = Math.max(maxY, p.y + p.h);
+        }
+        if (!hasVisible) return;
+        const boxW = maxX - minX + PAD * 2;
+        const boxH = maxY - minY + PAD * 2;
         const cw = container.clientWidth, ch = container.clientHeight;
-        scale = Math.min(cw / mx, ch / my, 1) * 0.95;
-        panX = (cw - mx * scale) / 2;
-        panY = (ch - my * scale) / 2;
+        scale = Math.min(cw / boxW, ch / boxH, 1) * 0.95;
+        panX = (cw - boxW * scale) / 2 - (minX - PAD) * scale;
+        panY = (ch - boxH * scale) / 2 - (minY - PAD) * scale;
         updateXform();
     }
 
@@ -353,20 +543,21 @@
         document.addEventListener("mouseup", () => { endDrag(); panning = false; container.classList.remove("dragging"); });
         $("btn-zoom-in").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(0.2, r.left + r.width / 2, r.top + r.height / 2); });
         $("btn-zoom-out").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(-0.2, r.left + r.width / 2, r.top + r.height / 2); });
-        $("btn-auto").addEventListener("click", autoLayout);
+        
+        // Remplacement de autoLayout par recalculateLayout
+        $("btn-auto").addEventListener("click", recalculateLayout);
+        
         $("btn-toggle-drawer").addEventListener("click", () => drawer.classList.toggle("collapsed"));
         toggleAllCb.addEventListener("change", toggleAll);
         $("search-input").addEventListener("input", (e) => updateSearch(e.target.value));
         copyJsonBtn.addEventListener("click", copyJson);
     }
 
-    async function init() {
+    function init() {
         buildAdj();
         buildDrawer();
         createBoxes();
-        await layout();
-        drawLinks();
-        fitView();
+        recalculateLayout(); // Appelle Calculate + PlaceBoxes
         setupEvents();
     }
 
