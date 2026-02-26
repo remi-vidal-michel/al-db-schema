@@ -120,7 +120,10 @@ function prepareDiagramData(scanResult: AlProjectScanResult): DiagramData {
         relations.push({ from: rel.fromTable, fromField: rel.fromField, to: rel.toTable, toField: rel.toField || "" });
     }
 
-    return { entities: Array.from(entityMap.values()), relations };
+    return { 
+        entities: Array.from(entityMap.values()).sort((a, b) => a.name.localeCompare(b.name)), 
+        relations: relations.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.fromField.localeCompare(b.fromField))
+    };
 }
 
 function getNonce(): string {

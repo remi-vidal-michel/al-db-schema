@@ -221,7 +221,6 @@
         const box = boxes.get(key);
         if (box) {
             box.classList.toggle("hidden", !show);
-            // FIX : Mettre à jour la hauteur réelle quand on affiche la table pour centrer le lien
             if (show && box.offsetHeight > 0) {
                 const d = dims.get(key);
                 if (d) d.h = box.offsetHeight;
@@ -266,11 +265,9 @@
             if (di) { di.classList.remove("hidden-table"); const cb = di.querySelector("input"); if (cb) cb.checked = true; }
         }
         syncAll();
-        // FIX : On force le recalcul complet pour que les nouvelles tables trouvent leur place sans chevauchement
         recalculateLayout();
     }
 
-    // --- MOTEUR PHYSIQUE & GRILLE ---
     function runPhysicsSimulation(grid) {
         for (let i = 0; i < 250; i++) {
             for (const e1 of data.entities) {
@@ -435,7 +432,6 @@
         const grid = {};
         const n = data.entities.length;
         
-        // Sécurité : On s'assure que les dims sont à jour (ex: si une table vient d'être affichée)
         for (const [key, box] of boxes.entries()) {
             if (!box.classList.contains("hidden") && box.offsetHeight > 0) {
                 const d = dims.get(key);
@@ -473,12 +469,10 @@
         });
     }
 
-    // --- MISE À JOUR : Fusion de recalculateLayout et autoLayout ---
-    // C'est cette fonction qui gère tout le flux de rafraîchissement
     function recalculateLayout() {
         positions.clear();
         calculateLayout();
-        placeBoxes(); // L'appel crucial qui manquait à autoLayout pour déplacer le HTML !
+        placeBoxes();
         drawLinks();
         fitView();
     }
@@ -500,7 +494,7 @@
         const drawn = new Set();
         for (const r of data.relations) {
             const fk = r.from.toLowerCase(), tk = r.to.toLowerCase();
-            if (fk === tk) continue; // Hide self-referencing relations
+            if (fk === tk) continue;
             if (!vis.get(fk) || !vis.get(tk)) continue;
             const dk = `${fk}|${tk}`;
             if (drawn.has(dk)) continue;
@@ -632,8 +626,7 @@
         $("btn-zoom-in").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(0.2, r.left + r.width / 2, r.top + r.height / 2); });
         $("btn-zoom-out").addEventListener("click", () => { const r = container.getBoundingClientRect(); zoom(-0.2, r.left + r.width / 2, r.top + r.height / 2); });
         $("btn-fit-view").addEventListener("click", fitView);
-        
-        // Remplacement de autoLayout par recalculateLayout
+
         $("btn-auto").addEventListener("click", recalculateLayout);
         
         $("btn-toggle-drawer").addEventListener("click", () => drawer.classList.toggle("collapsed"));
@@ -646,7 +639,7 @@
         buildAdj();
         buildDrawer();
         createBoxes();
-        recalculateLayout(); // Appelle Calculate + PlaceBoxes
+        recalculateLayout();
         setupEvents();
     }
 
