@@ -269,15 +269,15 @@
     }
 
     function runPhysicsSimulation(grid) {
-        for (let i = 0; i < 250; i++) {
+        for (let i = 0; i < 400; i++) {
             for (const e1 of data.entities) {
                 for (const e2 of data.entities) {
                     if (e1 === e2) continue;
                     const p1 = grid[e1.name], p2 = grid[e2.name];
                     const dx = p1.fx - p2.fx, dy = p1.fy - p2.fy;
                     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                    if (dist < 1500) {
-                        const force = 600000 / (dist * dist);
+                    if (dist < 800) {
+                        const force = 200000 / (dist * dist);
                         p1.vx += (dx / dist) * force;
                         p1.vy += (dy / dist) * force;
                     }
@@ -298,8 +298,8 @@
             for (const e of data.entities) {
                 const p = grid[e.name];
                 const d = Math.sqrt(p.fx * p.fx + p.fy * p.fy) || 1;
-                p.vx -= (p.fx / d) * 0.3;
-                p.vy -= (p.fy / d) * 0.3;
+                p.vx -= (p.fx / d) * 0.5;
+                p.vy -= (p.fy / d) * 0.5;
                 p.fx += p.vx;
                 p.fy += p.vy;
                 p.vx *= 0.5;
@@ -394,7 +394,7 @@
 
     function compact(grid, placed) {
         let moved = true, iter = 0;
-        while (moved && iter < 150) {
+        while (moved && iter < 300) {
             moved = false;
             iter++;
             const ordered = [...data.entities].sort((a, b) => {
