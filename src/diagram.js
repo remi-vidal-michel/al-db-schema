@@ -328,17 +328,14 @@
     function checkCollision(x, y, w, h, name, grid, placed, allowedOverlaps = 0) {
         const box = { x: x - 20, y: y - PAD_Y / 2, w: w + 40, h: h + PAD_Y };
         
-        // 1. Les collisions entre BOÎTES sont TOUJOURS strictement interdites
         for (const pn of placed) {
             if (pn === name) continue;
             const pb = grid[pn].box;
             if (box.x < pb.x + pb.w && box.x + box.w > pb.x && box.y < pb.y + pb.h && box.y + box.h > pb.y) return true;
         }
 
-        // 2. Optimisation : si la tolérance est énorme, on ignore la vérification des lignes
         if (allowedOverlaps >= 999) return false;
 
-        // 3. Comptage des chevauchements de LIGNES
         let overlaps = 0;
         const cx = x + w / 2, cy = y + h / 2;
         
@@ -346,14 +343,12 @@
             if (r.from === r.to) continue;
             const p1 = grid[r.from], p2 = grid[r.to];
             
-            // Lignes existantes qui coupent la nouvelle boîte
             if (p1?.isPlaced && p2?.isPlaced && r.from !== name && r.to !== name) {
                 if (lineIntersectsBox(p1.x + p1.estW / 2, p1.y + p1.estH / 2, p2.x + p2.estW / 2, p2.y + p2.estH / 2, x, y, w, h)) {
                     overlaps++;
-                    if (overlaps > allowedOverlaps) return true; // Rejeté si dépasse la tolérance
+                    if (overlaps > allowedOverlaps) return true;
                 }
             }
-            // Lignes de la boîte en cours qui coupent les boîtes existantes
             if ((r.from === name && p2?.isPlaced) || (r.to === name && p1?.isPlaced)) {
                 const other = r.from === name ? p2 : p1;
                 for (const pn of placed) {
@@ -361,7 +356,7 @@
                         const pp = grid[pn];
                         if (lineIntersectsBox(cx, cy, other.x + other.estW / 2, other.y + other.estH / 2, pp.x, pp.y, pp.estW, pp.estH)) {
                             overlaps++;
-                            if (overlaps > allowedOverlaps) return true; // Rejeté si dépasse la tolérance
+                            if (overlaps > allowedOverlaps) return true;
                         }
                     }
                 }
@@ -451,22 +446,14 @@
         const numEntities = data.entities.length;
         const numRelations = data.relations.length;
         
-        // --- DYNAMIC SCALING INTELLIGENCE ---
-        // Le projet EAE a ~16 tables. On s'en sert comme référence "Petite taille"
         const isSmallProject = numEntities <= 20; 
         
-        // 1. Rayon de spawn : Augmente proportionnellement pour conserver une densité parfaite
-        // La surface d'un cercle est π*r². On utilise la racine carrée pour une progression linéaire de la surface.
         const scaleFactor = Math.max(1, numEntities / 16);
         const spawnRadius = 400 * Math.sqrt(scaleFactor); 
         
-        // 2. Tolérance aux lignes : Strict (0) pour les petits, permissive pour les gros
-        // La tolérance augmente doucement en fonction des tables ET des relations
         const allowedOverlaps = isSmallProject ? 0 : Math.floor(numEntities / 5) + Math.floor(numRelations / 10);
         
-        // 3. Anti-Big Bang : 1px pour les petits graphes (transparent), 20px pour calmer les gros
         const minDist = isSmallProject ? 1 : 20;
-        // ------------------------------------
 
         for (const [key, box] of boxes.entries()) {
             if (!box.classList.contains("hidden") && box.offsetHeight > 0) {
@@ -480,8 +467,8 @@
             const key = e.name.toLowerCase();
             const d = dims.get(key);
             grid[e.name] = {
-                fx: Math.cos(a) * spawnRadius, // Applique le nouveau rayon
-                fy: Math.sin(a) * spawnRadius, // Applique le nouveau rayon
+                fx: Math.cos(a) * spawnRadius,
+                fy: Math.sin(a) * spawnRadius,
                 vx: 0, vy: 0,
                 estW: d ? d.w : TABLE_W, 
                 estH: d ? d.h : 45 + (e.fields ? e.fields.length : 0) * 29,
@@ -489,7 +476,6 @@
             };
         });
 
-        // Appel des fonctions avec nos nouvelles variables d'échelle
         runPhysicsSimulation(grid, minDist);
         const placed = placeOnGrid(grid, allowedOverlaps);
         compact(grid, placed, allowedOverlaps);
