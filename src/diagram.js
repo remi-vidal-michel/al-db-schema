@@ -268,14 +268,14 @@
         recalculateLayout();
     }
 
-    function runPhysicsSimulation(grid) {
+    function runPhysicsSimulation(grid, minDist) {
         for (let i = 0; i < 400; i++) {
             for (const e1 of data.entities) {
                 for (const e2 of data.entities) {
                     if (e1 === e2) continue;
                     const p1 = grid[e1.name], p2 = grid[e2.name];
                     const dx = p1.fx - p2.fx, dy = p1.fy - p2.fy;
-                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const dist = Math.max(Math.sqrt(dx * dx + dy * dy), minDist);
                     if (dist < 800) {
                         const force = 200000 / (dist * dist);
                         p1.vx += (dx / dist) * force;
@@ -288,7 +288,7 @@
                 const p1 = grid[r.from], p2 = grid[r.to];
                 if (!p1 || !p2) continue;
                 const dx = p2.fx - p1.fx, dy = p2.fy - p1.fy;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const dist = Math.max(Math.sqrt(dx * dx + dy * dy), minDist);
                 const force = (dist - 350) * 0.05;
                 p1.vx += (dx / dist) * force;
                 p1.vy += (dy / dist) * force;
@@ -325,26 +325,44 @@
         return x1 >= r[0].x && x1 <= r[1].x && y1 >= r[0].y && y1 <= r[2].y;
     }
 
-    function checkCollision(x, y, w, h, name, grid, placed) {
+    function checkCollision(x, y, w, h, name, grid, placed, allowedOverlaps = 0) {
         const box = { x: x - 20, y: y - PAD_Y / 2, w: w + 40, h: h + PAD_Y };
+        
+        // 1. Les collisions entre BOÎTES sont TOUJOURS strictement interdites
         for (const pn of placed) {
             if (pn === name) continue;
             const pb = grid[pn].box;
             if (box.x < pb.x + pb.w && box.x + box.w > pb.x && box.y < pb.y + pb.h && box.y + box.h > pb.y) return true;
         }
+
+        // 2. Optimisation : si la tolérance est énorme, on ignore la vérification des lignes
+        if (allowedOverlaps >= 999) return false;
+
+        // 3. Comptage des chevauchements de LIGNES
+        let overlaps = 0;
         const cx = x + w / 2, cy = y + h / 2;
+        
         for (const r of data.relations) {
             if (r.from === r.to) continue;
             const p1 = grid[r.from], p2 = grid[r.to];
+            
+            // Lignes existantes qui coupent la nouvelle boîte
             if (p1?.isPlaced && p2?.isPlaced && r.from !== name && r.to !== name) {
-                if (lineIntersectsBox(p1.x + p1.estW / 2, p1.y + p1.estH / 2, p2.x + p2.estW / 2, p2.y + p2.estH / 2, x, y, w, h)) return true;
+                if (lineIntersectsBox(p1.x + p1.estW / 2, p1.y + p1.estH / 2, p2.x + p2.estW / 2, p2.y + p2.estH / 2, x, y, w, h)) {
+                    overlaps++;
+                    if (overlaps > allowedOverlaps) return true; // Rejeté si dépasse la tolérance
+                }
             }
+            // Lignes de la boîte en cours qui coupent les boîtes existantes
             if ((r.from === name && p2?.isPlaced) || (r.to === name && p1?.isPlaced)) {
                 const other = r.from === name ? p2 : p1;
                 for (const pn of placed) {
                     if (pn !== r.from && pn !== r.to && pn !== name) {
                         const pp = grid[pn];
-                        if (lineIntersectsBox(cx, cy, other.x + other.estW / 2, other.y + other.estH / 2, pp.x, pp.y, pp.estW, pp.estH)) return true;
+                        if (lineIntersectsBox(cx, cy, other.x + other.estW / 2, other.y + other.estH / 2, pp.x, pp.y, pp.estW, pp.estH)) {
+                            overlaps++;
+                            if (overlaps > allowedOverlaps) return true; // Rejeté si dépasse la tolérance
+                        }
                     }
                 }
             }
@@ -352,7 +370,7 @@
         return false;
     }
 
-    function placeOnGrid(grid) {
+    function placeOnGrid(grid, allowedOverlaps) {
         const placed = new Set();
         
         const degreeMap = {};
@@ -378,7 +396,7 @@
                         if (Math.abs(dc) !== r && Math.abs(dy) !== r) continue;
                         const x = (col + dc) * COL_W;
                         const y = ty + dy * STEP_Y;
-                        if (!checkCollision(x, y, p.estW, p.estH, entity.name, grid, placed)) {
+                        if (!checkCollision(x, y, p.estW, p.estH, entity.name, grid, placed, allowedOverlaps)) {
                             p.x = x; p.y = y;
                             p.box = { x: x - 20, y: y - PAD_Y / 2, w: p.estW + 40, h: p.estH + PAD_Y };
                             p.isPlaced = true;
@@ -392,7 +410,7 @@
         return placed;
     }
 
-    function compact(grid, placed) {
+    function compact(grid, placed, allowedOverlaps) {
         let moved = true, iter = 0;
         while (moved && iter < 300) {
             moved = false;
@@ -414,11 +432,11 @@
                 if (Math.abs(tx - p.x) >= COL_W) dc = Math.sign(tx - p.x) * COL_W;
                 if (Math.abs(ty - p.y) >= STEP_Y) dy = Math.sign(ty - p.y) * STEP_Y;
                 let localMoved = false;
-                if (dc !== 0 && dy !== 0 && !checkCollision(p.x + dc, p.y + dy, p.estW, p.estH, entity.name, grid, placed)) {
+                if (dc !== 0 && dy !== 0 && !checkCollision(p.x + dc, p.y + dy, p.estW, p.estH, entity.name, grid, placed, allowedOverlaps)) {
                     p.x += dc; p.y += dy; localMoved = true;
-                } else if (dc !== 0 && !checkCollision(p.x + dc, p.y, p.estW, p.estH, entity.name, grid, placed)) {
+                } else if (dc !== 0 && !checkCollision(p.x + dc, p.y, p.estW, p.estH, entity.name, grid, placed, allowedOverlaps)) {
                     p.x += dc; localMoved = true;
-                } else if (dy !== 0 && !checkCollision(p.x, p.y + dy, p.estW, p.estH, entity.name, grid, placed)) {
+                } else if (dy !== 0 && !checkCollision(p.x, p.y + dy, p.estW, p.estH, entity.name, grid, placed, allowedOverlaps)) {
                     p.y += dy; localMoved = true;
                 }
                 p.box = { x: p.x - 20, y: p.y - PAD_Y / 2, w: p.estW + 40, h: p.estH + PAD_Y };
@@ -430,8 +448,26 @@
 
     function calculateLayout() {
         const grid = {};
-        const n = data.entities.length;
+        const numEntities = data.entities.length;
+        const numRelations = data.relations.length;
         
+        // --- DYNAMIC SCALING INTELLIGENCE ---
+        // Le projet EAE a ~16 tables. On s'en sert comme référence "Petite taille"
+        const isSmallProject = numEntities <= 20; 
+        
+        // 1. Rayon de spawn : Augmente proportionnellement pour conserver une densité parfaite
+        // La surface d'un cercle est π*r². On utilise la racine carrée pour une progression linéaire de la surface.
+        const scaleFactor = Math.max(1, numEntities / 16);
+        const spawnRadius = 400 * Math.sqrt(scaleFactor); 
+        
+        // 2. Tolérance aux lignes : Strict (0) pour les petits, permissive pour les gros
+        // La tolérance augmente doucement en fonction des tables ET des relations
+        const allowedOverlaps = isSmallProject ? 0 : Math.floor(numEntities / 5) + Math.floor(numRelations / 10);
+        
+        // 3. Anti-Big Bang : 1px pour les petits graphes (transparent), 20px pour calmer les gros
+        const minDist = isSmallProject ? 1 : 20;
+        // ------------------------------------
+
         for (const [key, box] of boxes.entries()) {
             if (!box.classList.contains("hidden") && box.offsetHeight > 0) {
                 const d = dims.get(key);
@@ -440,11 +476,12 @@
         }
 
         data.entities.forEach((e, i) => {
-            const a = (i / n) * Math.PI * 2;
+            const a = (i / numEntities) * Math.PI * 2;
             const key = e.name.toLowerCase();
             const d = dims.get(key);
             grid[e.name] = {
-                fx: Math.cos(a) * 400, fy: Math.sin(a) * 400,
+                fx: Math.cos(a) * spawnRadius, // Applique le nouveau rayon
+                fy: Math.sin(a) * spawnRadius, // Applique le nouveau rayon
                 vx: 0, vy: 0,
                 estW: d ? d.w : TABLE_W, 
                 estH: d ? d.h : 45 + (e.fields ? e.fields.length : 0) * 29,
@@ -452,9 +489,10 @@
             };
         });
 
-        runPhysicsSimulation(grid);
-        const placed = placeOnGrid(grid);
-        compact(grid, placed);
+        // Appel des fonctions avec nos nouvelles variables d'échelle
+        runPhysicsSimulation(grid, minDist);
+        const placed = placeOnGrid(grid, allowedOverlaps);
+        compact(grid, placed, allowedOverlaps);
 
         let minX = Infinity, minY = Infinity;
         for (const e of data.entities) { minX = Math.min(minX, grid[e.name].x); minY = Math.min(minY, grid[e.name].y); }
